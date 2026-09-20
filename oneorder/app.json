@@ -47,7 +47,8 @@
           "modes": [],
           "bluetoothAlwaysPermission": "ONEORDER connects to your Bluetooth thermal printer to print bills."
         }
-      ]
+      ],
+      "./plugins/withInlineModulesFix"
     ],
     "backgroundColor": "#FFFFFF",
     "extra": {
