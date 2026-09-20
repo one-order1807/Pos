@@ -1,0 +1,103 @@
+import { useSyncExternalStore } from 'react';
+import { consolidateLines, sessionTotals } from '../domain/bill';
+import { sessionLabel } from '../domain/ops';
+import type { OrderType, PaymentMethod, Session, State } from '../domain/types';
+import { useStore } from '../store/store';
+import { layoutCookBill, layoutCustomerBill, sampleBillData, sampleCookData, type BillData, type PrintLine } from './layout';
+import { getPrinterSnapshot, printLines, subscribePrinter, type PrinterSnapshot } from './printer';
+import { templateById } from './templates';
+
+export function usePrinter(): PrinterSnapshot {
+  return useSyncExternalStore(subscribePrinter, getPrinterSnapshot, getPrinterSnapshot);
+}
+
+export const TYPE_LABEL: Record<OrderType, string> = {
+  'dine-in': 'Dine-in',
+  takeaway: 'Takeaway',
+  delivery: 'Delivery',
+};
+
+export const PAY_LABEL: Record<PaymentMethod, string> = { cash: 'Cash', upi: 'UPI', card: 'Card' };
+
+export function buildBillData(state: State, s: Session, when: number): BillData {
+  const settings = state.settings.main;
+  const totals = sessionTotals(s, settings.gst);
+  return {
+    bill: settings.bill,
+    gst: { ...settings.gst, enabled: totals.gstEnabled },
+    label: sessionLabel(state, s),
+    orderNo: s.orderNo,
+    typeLabel: TYPE_LABEL[s.type],
+    lines: consolidateLines(s.lines),
+    subtotal: totals.subtotal,
+    gstPercent: totals.gstPercent,
+    gstAmount: totals.gstAmount,
+    total: totals.total,
+    when,
+    paymentLabel: s.paymentMethod ? PAY_LABEL[s.paymentMethod] : undefined,
+    customer: s.customerName || undefined,
+  };
+}
+
+export function customerBillLines(state: State, s: Session, when: number): PrintLine[] {
+  const t = templateById(state.settings.main.printer.templateId);
+  return layoutCustomerBill(t, buildBillData(state, s, when));
+}
+
+export function cookBillLines(state: State, ticketId: string): PrintLine[] | null {
+  const ticket = state.tickets[ticketId];
+  const s = ticket ? state.sessions[ticket.sessionId] : undefined;
+  if (!ticket || !s) return null;
+  const t = templateById(state.settings.main.printer.templateId);
+  return layoutCookBill(t, {
+    bill: state.settings.main.bill,
+    label: ticket.label,
+    orderNo: s.orderNo,
+    typeLabel: TYPE_LABEL[s.type],
+    round: ticket.round,
+    items: ticket.items,
+    when: ticket.sentAt,
+  });
+}
+
+export interface PrintOutcome {
+  ok: boolean;
+  error?: string;
+}
+
+async function run(lines: PrintLine[] | null): Promise<PrintOutcome> {
+  if (!lines) return { ok: false, error: 'Nothing to print.' };
+  try {
+    await printLines(lines);
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? 'Print failed.' };
+  }
+}
+
+export async function printCookTicket(ticketId: string): Promise<PrintOutcome> {
+  const r = await run(cookBillLines(useStore.getState().data, ticketId));
+  if (r.ok) useStore.getState().markTicketPrinted(ticketId);
+  return r;
+}
+
+export async function printCustomerBill(sessionId: string): Promise<PrintOutcome> {
+  const state = useStore.getState().data;
+  const s = state.sessions[sessionId];
+  if (!s) return { ok: false, error: 'Order not found.' };
+  const r = await run(customerBillLines(state, s, Date.now()));
+  if (r.ok && s.status === 'open') useStore.getState().markBillPrinted(sessionId);
+  return r;
+}
+
+export function testLines(state: State, templateId: string, kind: 'customer' | 'cook'): PrintLine[] {
+  const st = state.settings.main;
+  const t = templateById(templateId);
+  return kind === 'customer'
+    ? layoutCustomerBill(t, sampleBillData(st.bill, st.gst, Date.now()))
+    : layoutCookBill(t, sampleCookData(st.bill, Date.now()));
+}
+
+export async function printTest(templateId: string, kind: 'customer' | 'cook'): Promise<PrintOutcome> {
+  return run(testLines(useStore.getState().data, templateId, kind));
+}

@@ -1,0 +1,45 @@
+{
+  "name": "oneorder",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@expo-google-fonts/instrument-serif": "^0.4.1",
+    "@expo-google-fonts/work-sans": "^0.4.2",
+    "@expo/vector-icons": "^15.0.2",
+    "@react-native-community/netinfo": "12.0.1",
+    "expo": "~57.0.24",
+    "expo-crypto": "~57.0.3",
+    "expo-dev-client": "~57.0.19",
+    "expo-document-picker": "~57.0.2",
+    "expo-file-system": "~57.0.7",
+    "expo-font": "~57.0.4",
+    "expo-sharing": "~57.0.21",
+    "expo-sqlite": "~57.0.3",
+    "expo-status-bar": "~57.0.1",
+    "expo-system-ui": "~57.0.4",
+    "firebase": "^12.19.0",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-ble-plx": "^3.5.1",
+    "react-native-gesture-handler": "~2.32.0",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-svg": "15.15.4",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/react": "~19.2.2",
+    "tsx": "^4.23.11",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "test": "tsx --experimental-test-module-mocks --test tests/domain.test.ts tests/store.test.ts tests/printer-unsupported.test.ts tests/printer-ble.test.ts tests/printer-native-missing.test.ts",
+    "typecheck": "tsc --noEmit && tsc -p tests/tsconfig.json",
+    "check": "npm run typecheck && npm test"
+  },
+  "private": true
+}

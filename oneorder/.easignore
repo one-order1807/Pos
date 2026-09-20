@@ -1,0 +1,10 @@
+node_modules/
+.git/
+.expo/
+.env
+.env.*
+!.env.example
+dist/
+android/
+ios/
+tests/

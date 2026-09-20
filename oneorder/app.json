@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "ONEORDER",
+    "slug": "oneorder",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.oneorder.pos",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "ONEORDER connects to your Bluetooth thermal printer to print bills."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.oneorder.pos",
+      "permissions": [
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_SCAN",
+        "ACCESS_FINE_LOCATION",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-font",
+      "expo-sharing",
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": [],
+          "bluetoothAlwaysPermission": "ONEORDER connects to your Bluetooth thermal printer to print bills."
+        }
+      ]
+    ],
+    "backgroundColor": "#FFFFFF",
+    "extra": {
+      "eas": {
+        "projectId": "c1b2a459-af83-455d-9458-93b75cf4e227"
+      }
+    },
+    "owner": "one-orders-team"
+  }
+}
