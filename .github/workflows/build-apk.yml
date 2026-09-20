@@ -106,10 +106,34 @@ jobs:
       - name: Give Gradle more memory
         run: echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g" >> android/gradle.properties
 
+      - name: Install node call logger
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/nodeshim"
+          cat > "$RUNNER_TEMP/nodeshim/node" <<'SHIM'
+          #!/usr/bin/env bash
+          out=$(mktemp); err=$(mktemp)
+          "$REAL_NODE" "$@" >"$out" 2>"$err"
+          code=$?
+          {
+            echo "[exit $code] node $(printf '%s ' "$@" | cut -c1-260)"
+            [ "$code" -ne 0 ] && head -c 1500 "$err"
+          } >> "$NODE_CALL_LOG"
+          cat "$out"
+          cat "$err" >&2
+          rm -f "$out" "$err"
+          exit $code
+          SHIM
+          chmod +x "$RUNNER_TEMP/nodeshim/node"
+          echo "REAL_NODE=$(command -v node)" >> "$GITHUB_ENV"
+          echo "NODE_CALL_LOG=$RUNNER_TEMP/node-calls.log" >> "$GITHUB_ENV"
+
       - name: Build release APK
         working-directory: oneorder/android
         shell: bash
-        run: ./gradlew assembleRelease --no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a,armeabi-v7a 2>&1 | tee build.log
+        run: |
+          export PATH="$RUNNER_TEMP/nodeshim:$PATH"
+          ./gradlew assembleRelease --no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a,armeabi-v7a 2>&1 | tee build.log
 
       - name: Show build errors in the run summary
         if: failure()
@@ -132,6 +156,16 @@ jobs:
               i=$((i + 1))
             done
           done
+          if [ -f "$NODE_CALL_LOG" ]; then
+            total=$(grep -c '^\[exit' "$NODE_CALL_LOG")
+            bad=$(grep -c '^\[exit [1-9]' "$NODE_CALL_LOG")
+            msg=$(awk '/^\[exit [1-9]/{p=1} /^\[exit 0\]/{p=0} p' "$NODE_CALL_LOG" | head -60 | cut -c1-300)
+            msg="${msg//%/%25}"
+            msg="${msg//$nl/%0A}"
+            echo "::error title=node-calls ${bad} of ${total} failed::${msg}"
+          else
+            echo "::warning::no node call log was written"
+          fi
           exit 0
 
       - name: Name the APK
