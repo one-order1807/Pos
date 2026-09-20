@@ -82,7 +82,7 @@ jobs:
       - name: Build release APK
         working-directory: oneorder/android
         shell: bash
-        run: ./gradlew assembleRelease --no-daemon --stacktrace -PreactNativeArchitectures=arm64-v8a,armeabi-v7a 2>&1 | tee build.log
+        run: ./gradlew assembleRelease --no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a,armeabi-v7a 2>&1 | tee build.log
 
       - name: Show build errors in the run summary
         if: failure()
@@ -94,9 +94,15 @@ jobs:
               echo "::warning::$f does not exist"
               continue
             fi
-            wrong=$(awk '/What went wrong/{p=1} /\* Try:/{p=0} p' "$f" | head -30 | cut -c1-300)
-            last=$(tail -n 25 "$f" | cut -c1-300)
-            msg="${wrong}"$'\n'"--- last lines ---"$'\n'"${last}"
+            wrong=$(awk '/What went wrong/{p=1} /\* Try:/{p=0} p' "$f" | head -12 | cut -c1-300)
+            n=$(grep -n 'FAILED$' "$f" | head -1 | cut -d: -f1)
+            if [ -n "$n" ]; then
+              start=$((n - 60)); [ "$start" -lt 1 ] && start=1
+              before=$(sed -n "${start},$((n + 3))p" "$f" | cut -c1-300)
+            else
+              before=$(tail -n 40 "$f" | cut -c1-300)
+            fi
+            msg="${wrong}"$'\n'"--- lines before the failing task ---"$'\n'"${before}"
             msg="${msg//'%'/'%25'}"
             msg="${msg//$'\n'/'%0A'}"
             echo "::error title=$f::$msg"
