@@ -104,7 +104,9 @@ jobs:
           echo "::warning title=node-diagnostics::${report}"
 
       - name: Give Gradle more memory
-        run: echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g" >> android/gradle.properties
+        # The generated file has no trailing newline, so start with one; otherwise this line is glued
+        # onto the previous property and corrupts its value.
+        run: printf '\norg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g\n' >> android/gradle.properties
 
       - name: Install node call logger
         shell: bash
