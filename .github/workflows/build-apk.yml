@@ -89,23 +89,21 @@ jobs:
         shell: bash
         run: |
           set +e
+          esc=$(printf '\033')
+          nl=$'\n'
           for f in prebuild.log android/build.log; do
-            if [ ! -f "$f" ]; then
-              echo "::warning::$f does not exist"
-              continue
-            fi
-            wrong=$(awk '/What went wrong/{p=1} /\* Try:/{p=0} p' "$f" | head -12 | cut -c1-300)
-            n=$(grep -n 'FAILED$' "$f" | head -1 | cut -d: -f1)
-            if [ -n "$n" ]; then
-              start=$((n - 60)); [ "$start" -lt 1 ] && start=1
-              before=$(sed -n "${start},$((n + 3))p" "$f" | cut -c1-300)
-            else
-              before=$(tail -n 40 "$f" | cut -c1-300)
-            fi
-            msg="${wrong}"$'\n'"--- lines before the failing task ---"$'\n'"${before}"
-            msg="${msg//'%'/'%25'}"
-            msg="${msg//$'\n'/'%0A'}"
-            echo "::error title=$f::$msg"
+            if [ ! -f "$f" ]; then echo "::warning::$f does not exist"; continue; fi
+            clean=$(sed "s/${esc}\[[0-9;]*m//g" "$f" | grep -vE '^[[:space:]]*$' | grep -vE '^[[:space:]]+- |^[[:space:]]+at (org|java|jdk|kotlin)' | cut -c1-220)
+            echo "$f cleaned lines: $(printf '%s\n' "$clean" | wc -l)"
+            i=0
+            while [ $i -lt 6 ]; do
+              chunk=$(printf '%s\n' "$clean" | sed -n "$((i * 70 + 1)),$((i * 70 + 70))p")
+              [ -z "$chunk" ] && break
+              chunk="${chunk//%/%25}"
+              chunk="${chunk//$nl/%0A}"
+              echo "::error title=$f part $((i + 1))::$chunk"
+              i=$((i + 1))
+            done
           done
           exit 0
 
