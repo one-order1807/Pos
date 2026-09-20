@@ -4,7 +4,7 @@ import { formatDuration, formatMoney } from '../domain/money';
 import { openSessions, sessionLabel } from '../domain/ops';
 import type { MenuItem, OrderType, Session } from '../domain/types';
 import { useStore } from '../store/store';
-import { Btn, Chip, Confirm, Dot, EmptyState, Icon, Modal, toast, useNow } from '../ui/components';
+import { Btn, Chip, DelayedConfirm, Dot, EmptyState, Icon, Modal, toast, useNow } from '../ui/components';
 import { colors, fonts, shadow } from '../ui/theme';
 import { ItemModal } from './ItemModal';
 import { OrderPanel } from './OrderPanel';
@@ -26,7 +26,7 @@ export function OrderScreen() {
   const now = useNow(15000);
 
   const [search, setSearch] = useState('');
-  const [catId, setCatId] = useState<string | null>(null);
+  const [catId, setCatId] = useState<string>('all');
   const [customItem, setCustomItem] = useState<MenuItem | null>(null);
   const [newMenu, setNewMenu] = useState(false);
   const [tablePick, setTablePick] = useState(false);
@@ -40,7 +40,7 @@ export function OrderScreen() {
     () => Object.values(data.categories).sort((a, b) => a.sort - b.sort),
     [data.categories],
   );
-  const selectedCat = catId && data.categories[catId] ? catId : categories[0]?.id ?? null;
+  const selectedCat = catId === 'all' || data.categories[catId] ? catId : 'all';
 
   const items = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -48,10 +48,16 @@ export function OrderScreen() {
       .filter((i) => i.active)
       .filter((i) => {
         if (q) return i.name.toLowerCase().includes(q) || i.code.toLowerCase().includes(q) || i.id.toLowerCase() === q;
-        return i.categoryId === selectedCat;
+        return selectedCat === 'all' || i.categoryId === selectedCat;
       })
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [data.items, search, selectedCat]);
+      .sort((a, b) => {
+        if (selectedCat === 'all' && !q) {
+          const d = (data.categories[a.categoryId]?.sort ?? 0) - (data.categories[b.categoryId]?.sort ?? 0);
+          if (d) return d;
+        }
+        return a.name.localeCompare(b.name);
+      });
+  }, [data.items, data.categories, search, selectedCat]);
 
   const qtyInOrder = useMemo(() => {
     const m = new Map<string, number>();
@@ -149,6 +155,14 @@ export function OrderScreen() {
           </View>
           <View style={{ height: 52 }}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center' }}>
+              <Chip
+                label="All"
+                active={!search && selectedCat === 'all'}
+                onPress={() => {
+                  setSearch('');
+                  setCatId('all');
+                }}
+              />
               {categories.map((c) => (
                 <Chip
                   key={c.id}
@@ -255,7 +269,7 @@ export function OrderScreen() {
       </Modal>
       <TablePicker visible={tablePick} onClose={() => setTablePick(false)} onPick={pickFromNew} />
 
-      <Confirm
+      <DelayedConfirm
         visible={!!closing}
         title="Close this tab?"
         message={
@@ -264,7 +278,6 @@ export function OrderScreen() {
             : 'This order is unpaid — close anyway?'
         }
         confirmLabel="Close anyway"
-        danger
         onCancel={() => setClosing(null)}
         onConfirm={() => {
           if (closing) closeTab(closing.id);

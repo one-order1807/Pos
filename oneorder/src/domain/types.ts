@@ -84,10 +84,15 @@ export interface Ticket {
   printed: boolean;
 }
 
+export type EventType = 'Birthday' | 'Anniversary' | 'Celebration' | 'Other';
+export const EVENT_TYPES: EventType[] = ['Birthday', 'Anniversary', 'Celebration', 'Other'];
+
 export interface Customer {
   id: string;
   name: string;
   phone: string;
+  event: EventType | '';
+  createdAt: number;
 }
 
 export interface GstSettings {
@@ -120,6 +125,7 @@ export interface Settings {
   pinSalt: string;
   orderCounter: { date: string; n: number };
   priorityCounter: number;
+  layoutPrev: TableDef[];
 }
 
 export interface State {

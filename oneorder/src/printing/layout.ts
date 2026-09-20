@@ -33,7 +33,7 @@ export interface CookData {
   label: string;
   orderNo: number;
   typeLabel: string;
-  round: number;
+  round: number | null;
   items: TicketItem[];
   when: number;
   isTest?: boolean;
@@ -209,7 +209,8 @@ export function layoutCookBill(t: PrintTemplate, d: CookData): PrintLine[] {
   out.push({ text: 'COOK BILL', align: 'center', bold: true, size: 2 });
   for (const l of wrapText(d.label, Math.floor(w / 2))) out.push({ text: l, align: 'center', bold: true, size: 2 });
   out.push(rule(w, t.style === 'boxed' ? '=' : '-'));
-  for (const l of twoCol(`Order #${d.orderNo}  Round ${d.round}`, d.typeLabel, w)) out.push({ text: l });
+  const roundText = d.round === null ? 'ALL ROUNDS' : `Round ${d.round}`;
+  for (const l of twoCol(`Order #${d.orderNo}  ${roundText}`, d.typeLabel, w)) out.push({ text: l });
   out.push({ text: fmtDate(d.when) });
   out.push(rule(w, t.style === 'boxed' ? '=' : '-'));
   for (const it of d.items) {
@@ -226,9 +227,9 @@ export function layoutCookBill(t: PrintTemplate, d: CookData): PrintLine[] {
 
 export function sampleBillData(bill: BillSettings, gst: GstSettings, now: number): BillData {
   const lines: BillLine[] = [
-    { key: 'a', name: 'Sample Masala Dosa', qty: 5, unitPrice: 90, amount: 450 },
-    { key: 'b', name: 'Sample Filter Coffee with Extra Long Name Here', qty: 8, unitPrice: 40, amount: 320 },
-    { key: 'c', name: 'Sample Brownie', qty: 1, unitPrice: 100, amount: 100 },
+    { key: 'a', name: 'Sample Masala Dosa', qty: 2, unitPrice: 20, amount: 40 },
+    { key: 'b', name: 'Sample Filter Coffee with Extra Long Name Here', qty: 2, unitPrice: 15, amount: 30 },
+    { key: 'c', name: 'Sample Brownie', qty: 1, unitPrice: 30, amount: 30 },
   ];
   const subtotal = lines.reduce((s, l) => s + l.amount, 0);
   const pct = gst.enabled ? Number(String(gst.percent).replace('%', '')) || 0 : 0;

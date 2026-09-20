@@ -137,3 +137,48 @@ export function buildDashboard(state: State, range: RangeKey, now: number): Dash
 export function todayKey(now: number): string {
   return dayKey(now);
 }
+
+export const DRILLDOWN_DAYS = 7;
+
+export interface OrderRow {
+  id: string;
+  orderNo: number;
+  label: string;
+  paidAt: number;
+  total: number;
+  typeLabel: string;
+  paymentMethod: PaymentMethod | null;
+  customer: string;
+}
+
+export function drilldownStart(now: number): number {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() - (DRILLDOWN_DAYS - 1) * 86400000;
+}
+
+const TYPE_TEXT: Record<OrderType, string> = { 'dine-in': 'Dine-in', takeaway: 'Takeaway', delivery: 'Delivery' };
+
+export function recentOrders(state: State, now: number, onlyToday = false): OrderRow[] {
+  const start = onlyToday ? rangeStart('today', now) : drilldownStart(now);
+  return paidSessions(state)
+    .filter((s) => (s.paidAt as number) >= start)
+    .sort((a, b) => (b.paidAt as number) - (a.paidAt as number))
+    .map((s) => ({
+      id: s.id,
+      orderNo: s.orderNo,
+      label: s.tableId ? state.tables[s.tableId]?.label ?? TYPE_TEXT[s.type] : TYPE_TEXT[s.type],
+      paidAt: s.paidAt as number,
+      total: s.final!.total,
+      typeLabel: TYPE_TEXT[s.type],
+      paymentMethod: s.paymentMethod,
+      customer: s.customerName || s.customerPhone,
+    }));
+}
+
+export function hourLabel(h: number, hours12: boolean): string {
+  if (!hours12) return String(h);
+  const suffix = h < 12 ? 'a' : 'p';
+  const base = h % 12 === 0 ? 12 : h % 12;
+  return `${base}${suffix}`;
+}

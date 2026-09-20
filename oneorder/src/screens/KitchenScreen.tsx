@@ -21,8 +21,6 @@ function urgency(ms: number): { color: string; bg: string; text: string } {
 
 export function KitchenScreen() {
   const data = useStore((s) => s.data);
-  const startTicket = useStore((s) => s.startTicket);
-  const markReady = useStore((s) => s.markReady);
   const reorder = useStore((s) => s.reorderPending);
   const now = useNow(10000);
   const { width } = useWindowDimensions();
@@ -61,7 +59,6 @@ export function KitchenScreen() {
         <PendingList
           tickets={pending}
           now={now}
-          onStart={(t) => startTicket(t.id)}
           onReorder={reorder}
           onReprint={reprint}
           setDragging={setDragScroll}
@@ -72,8 +69,7 @@ export function KitchenScreen() {
         {cooking.map((t) => (
           <TicketCard key={t.id} t={t} now={now} baseTime={t.sentAt} timeLabel="Sent">
             <View style={styles.btnRow}>
-              <Btn small label="Mark Ready" icon="check" variant="success" onPress={() => markReady(t.id)} style={{ flex: 1 }} />
-              <Btn small icon="printer" variant="secondary" onPress={() => reprint(t)} />
+              <Btn small label="Print" icon="printer" variant="secondary" onPress={() => reprint(t)} />
             </View>
           </TicketCard>
         ))}
@@ -184,14 +180,12 @@ function TicketCard({
 function PendingList({
   tickets,
   now,
-  onStart,
   onReorder,
   onReprint,
   setDragging,
 }: {
   tickets: Ticket[];
   now: number;
-  onStart: (t: Ticket) => void;
   onReorder: (id: string, toIndex: number) => void;
   onReprint: (t: Ticket) => void;
   setDragging: (d: boolean) => void;
@@ -266,10 +260,9 @@ function PendingList({
               }
             >
               <View style={styles.btnRow}>
-                <Btn small label="Start Cooking" icon="play" onPress={() => onStart(t)} style={{ flex: 1 }} />
-                <Btn small icon="chevron-up" variant="secondary" disabled={i === 0} onPress={() => onReorder(t.id, i - 1)} />
-                <Btn small icon="chevron-down" variant="secondary" disabled={i === tickets.length - 1} onPress={() => onReorder(t.id, i + 1)} />
-                <Btn small icon="printer" variant="secondary" onPress={() => onReprint(t)} />
+                <Btn small label="Up" icon="chevron-up" variant="secondary" disabled={i === 0} onPress={() => onReorder(t.id, i - 1)} />
+                <Btn small label="Down" icon="chevron-down" variant="secondary" disabled={i === tickets.length - 1} onPress={() => onReorder(t.id, i + 1)} />
+                <Btn small label="Print" icon="printer" variant="secondary" onPress={() => onReprint(t)} />
               </View>
             </TicketCard>
           </View>

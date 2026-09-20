@@ -107,6 +107,8 @@ type BtnVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'success';
 export function Btn({
   label,
   onPress,
+  onLongPress,
+  delayLongPress,
   icon,
   variant = 'primary',
   disabled,
@@ -116,6 +118,8 @@ export function Btn({
 }: {
   label?: string;
   onPress: () => void;
+  onLongPress?: () => void;
+  delayLongPress?: number;
   icon?: IconName;
   variant?: BtnVariant;
   disabled?: boolean;
@@ -128,7 +132,7 @@ export function Btn({
     Animated.timing(scale, { toValue: v, duration: 200, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
   const palette = {
     primary: { bg: colors.primary, fg: '#fff', border: colors.primary },
-    secondary: { bg: colors.white, fg: colors.primary, border: colors.border },
+    secondary: { bg: colors.white, fg: colors.primary, border: colors.midSoft },
     danger: { bg: colors.red, fg: '#fff', border: colors.red },
     success: { bg: '#16A34A', fg: '#fff', border: '#16A34A' },
     ghost: { bg: 'transparent', fg: colors.primary, border: 'transparent' },
@@ -140,6 +144,8 @@ export function Btn({
         accessibilityLabel={label}
         disabled={disabled}
         onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={delayLongPress}
         onPressIn={() => to(1.05)}
         onPressOut={() => to(1)}
         hitSlop={4}
@@ -266,6 +272,93 @@ export function Confirm({
       </View>
     </Modal>
   );
+}
+
+export function useCountdown(active: boolean, seconds: number): number {
+  const [left, setLeft] = useState(seconds);
+  useEffect(() => {
+    if (!active) return;
+    setLeft(seconds);
+    const started = Date.now();
+    const id = setInterval(() => {
+      const remaining = Math.max(0, seconds - Math.floor((Date.now() - started) / 1000));
+      setLeft(remaining);
+      if (remaining === 0) clearInterval(id);
+    }, 250);
+    return () => clearInterval(id);
+  }, [active, seconds]);
+  return left;
+}
+
+export function CountdownBtn({
+  label,
+  seconds,
+  active,
+  onPress,
+  variant = 'danger',
+  icon,
+  full,
+  style,
+}: {
+  label: string;
+  seconds: number;
+  active: boolean;
+  onPress: () => void;
+  variant?: BtnVariant;
+  icon?: IconName;
+  full?: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const left = useCountdown(active, seconds);
+  return (
+    <Btn
+      label={left > 0 ? `${label} (${left})` : label}
+      onPress={onPress}
+      disabled={left > 0}
+      variant={variant}
+      icon={icon}
+      full={full}
+      style={style}
+    />
+  );
+}
+
+export const CLOSE_DELAY_SECONDS = 5;
+
+export function DelayedConfirm({
+  visible,
+  title,
+  message,
+  confirmLabel = 'Close anyway',
+  onConfirm,
+  onCancel,
+}: {
+  visible: boolean;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal visible={visible} onClose={onCancel} title={title} width={440}>
+      <Text style={styles.confirmMsg}>{message}</Text>
+      <View style={styles.row}>
+        <Btn label="Cancel" variant="secondary" onPress={onCancel} style={{ flex: 1 }} />
+        <CountdownBtn
+          label={confirmLabel}
+          seconds={CLOSE_DELAY_SECONDS}
+          active={visible}
+          onPress={onConfirm}
+          style={{ flex: 1 }}
+        />
+      </View>
+    </Modal>
+  );
+}
+
+export function Wordmark({ size = 26, color = colors.primary }: { size?: number; color?: string }) {
+  return <Text style={{ fontFamily: fonts.wordmark, fontSize: size, color, letterSpacing: 0.6 }}>ONEORDER</Text>;
 }
 
 export function Dot({ color, size = 10 }: { color: string; size?: number }) {

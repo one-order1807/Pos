@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { consolidateLines, sessionTotals } from '../domain/bill';
+import { consolidateLines, consolidateTicketItems, sessionTotals } from '../domain/bill';
 import { sessionLabel } from '../domain/ops';
 import type { OrderType, PaymentMethod, Session, State } from '../domain/types';
 import { useStore } from '../store/store';
@@ -79,6 +79,27 @@ export async function printCookTicket(ticketId: string): Promise<PrintOutcome> {
   const r = await run(cookBillLines(useStore.getState().data, ticketId));
   if (r.ok) useStore.getState().markTicketPrinted(ticketId);
   return r;
+}
+
+export function cookRoundLines(state: State, sessionId: string, round: number | null): PrintLine[] | null {
+  const s = state.sessions[sessionId];
+  if (!s) return null;
+  const lines = s.lines.filter((l) => l.round !== null && (round === null || l.round === round));
+  if (lines.length === 0) return null;
+  const t = templateById(state.settings.main.printer.templateId);
+  return layoutCookBill(t, {
+    bill: state.settings.main.bill,
+    label: sessionLabel(state, s),
+    orderNo: s.orderNo,
+    typeLabel: TYPE_LABEL[s.type],
+    round,
+    items: consolidateTicketItems(lines),
+    when: Date.now(),
+  });
+}
+
+export async function printCookRound(sessionId: string, round: number | null): Promise<PrintOutcome> {
+  return run(cookRoundLines(useStore.getState().data, sessionId, round));
 }
 
 export async function printCustomerBill(sessionId: string): Promise<PrintOutcome> {

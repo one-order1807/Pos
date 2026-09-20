@@ -4,7 +4,7 @@ import { parseBackup, buildBackup, buildMenuExport, previewBackup, type BackupFi
 import { computeTotals } from '../domain/bill';
 import { formatMoney, formatPercent, parseGstPercent } from '../domain/money';
 import { useStore } from '../store/store';
-import { syncNow, useSyncStatus } from '../sync/firebase';
+import { syncNow, useSyncStatus } from '../sync/engine';
 import { pickLogo, pickTextFile, shareJson } from '../util/files';
 import { Btn, Card, Confirm, Field, Icon, Modal, SectionTitle, toast } from '../ui/components';
 import { PinGate } from '../ui/PinGate';
@@ -134,7 +134,7 @@ function GstSetup() {
 
   const sample = useMemo(() => {
     const totals = computeTotals(
-      [{ id: 'x', itemId: 'x', name: 'x', categoryId: 'x', unitPrice: 390, qty: 1, note: '', round: null }],
+      [{ id: 'x', itemId: 'x', name: 'x', categoryId: 'x', unitPrice: 100, qty: 1, note: '', round: null }],
       { enabled: gst.enabled, percent, number },
     );
     return totals;
@@ -192,7 +192,7 @@ function GstSetup() {
         {invalid ? <Text style={styles.err}>Enter a number for the GST percentage.</Text> : null}
       </View>
       <View style={styles.preview}>
-        <Text style={styles.label}>Bill preview (Rs 390 order)</Text>
+        <Text style={styles.label}>Bill preview (Rs 100 order)</Text>
         {gst.enabled ? (
           <>
             <PreviewRow a="Subtotal" b={formatMoney(sample.subtotal)} />
@@ -326,7 +326,7 @@ function DataTools() {
             <PreviewRow a="Tables" b={String(pending.preview.tables)} />
             <PreviewRow a="Orders (all)" b={String(pending.preview.sessions)} />
             <PreviewRow a="Paid orders (sales history)" b={String(pending.preview.paidSessions)} />
-            <PreviewRow a="Customers" b={String(pending.preview.customers)} />
+            <PreviewRow a="Users (customer directory)" b={String(pending.preview.customers)} />
             <PreviewRow a="Bill setup / GST / printer settings" b={pending.preview.hasSettings ? 'Included' : 'Not included'} />
             {pending.preview.openSessionsLost > 0 ? (
               <Text style={styles.err}>{pending.preview.openSessionsLost} currently open order(s) will be replaced.</Text>

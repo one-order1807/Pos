@@ -12,6 +12,16 @@ export async function shareJson(filename: string, payload: unknown): Promise<voi
   await Sharing.shareAsync(file.uri, { mimeType: 'application/json', dialogTitle: filename });
 }
 
+export async function shareBinary(filename: string, bytes: Uint8Array, mimeType: string): Promise<void> {
+  const file = new File(Paths.cache, filename);
+  file.create({ overwrite: true });
+  file.write(bytes);
+  if (!(await Sharing.isAvailableAsync())) {
+    throw new Error('Sharing is not available on this device.');
+  }
+  await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: filename });
+}
+
 export async function pickTextFile(): Promise<{ name: string; text: string } | null> {
   const res = await DocumentPicker.getDocumentAsync({
     type: ['application/json', 'text/plain', 'application/octet-stream', '*/*'],

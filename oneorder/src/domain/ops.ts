@@ -1,6 +1,7 @@
 import { computeTotals, consolidateTicketItems } from './bill';
 import { dayKey } from './money';
 import type {
+  Customer,
   MenuItem,
   OrderLine,
   OrderType,
@@ -420,10 +421,21 @@ export function payAndClose(
       ...next,
       customers: {
         ...next.customers,
-        [phone]: { id: phone, phone, name: name || existing?.name || '' },
+        [phone]: {
+          id: phone,
+          phone,
+          name: name || existing?.name || '',
+          event: existing?.event ?? '',
+          createdAt: existing?.createdAt ?? now,
+        },
       },
     };
   }
+  const tickets = { ...next.tickets };
+  for (const t of Object.values(next.tickets)) {
+    if (t.sessionId === sessionId && t.status !== 'ready') delete tickets[t.id];
+  }
+  next = { ...next, tickets };
   return { state: unmergeIfMerged(next, s.tableId) };
 }
 
@@ -592,5 +604,52 @@ export function validateTables(state: State, tables: TableMap): string | null {
 }
 
 export function applyTables(state: State, tables: TableMap): State {
-  return { ...state, tables };
+  const st = settingsOf(state);
+  return {
+    ...state,
+    tables,
+    settings: { ...state.settings, main: { ...st, layoutPrev: Object.values(state.tables) } },
+  };
+}
+
+export function rollbackTables(state: State): { state: State; error?: string } {
+  const st = settingsOf(state);
+  if (!st.layoutPrev || st.layoutPrev.length === 0) return { state, error: 'There is no earlier saved layout.' };
+  const prev: TableMap = {};
+  for (const t of st.layoutPrev) prev[t.id] = t;
+  const err = validateTables(state, prev);
+  if (err) return { state, error: err };
+  return {
+    state: {
+      ...state,
+      tables: prev,
+      settings: { ...state.settings, main: { ...st, layoutPrev: Object.values(state.tables) } },
+    },
+  };
+}
+
+// ---------- customers / users ----------
+
+export function saveCustomer(
+  state: State,
+  input: { oldId?: string; name: string; phone: string; event: Customer['event'] },
+  now: number,
+): { state: State; error?: string } {
+  const name = input.name.trim();
+  const phone = input.phone.trim();
+  if (!name && !phone) return { state, error: 'Enter a name or a phone number.' };
+  const id = phone || input.oldId || uid('usr');
+  const customers = { ...state.customers };
+  const old = input.oldId ? customers[input.oldId] : undefined;
+  if (customers[id] && id !== input.oldId) return { state, error: 'A user with this phone number already exists.' };
+  if (input.oldId && input.oldId !== id) delete customers[input.oldId];
+  customers[id] = { id, name, phone, event: input.event, createdAt: old?.createdAt ?? now };
+  return { state: { ...state, customers } };
+}
+
+export function deleteCustomer(state: State, id: string): State {
+  if (!state.customers[id]) return state;
+  const customers = { ...state.customers };
+  delete customers[id];
+  return { ...state, customers };
 }

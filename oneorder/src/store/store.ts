@@ -5,11 +5,12 @@ import { allDocs, diffStates, type DocChange } from '../domain/diff';
 import { makeTapGuard } from '../domain/guard';
 import * as ops from '../domain/ops';
 import { hashPin } from '../domain/sha256';
-import { fetchCloudState, scheduleSync, startSync } from '../sync/firebase';
+import { fetchCloudState, scheduleSync, startSync } from '../sync/engine';
 import { defaultSettings, emptyState, seedState } from '../domain/seed';
 import type {
   BillSettings,
   Category,
+  Customer,
   GstSettings,
   MenuItem,
   OrderType,
@@ -19,7 +20,7 @@ import type {
   State,
 } from '../domain/types';
 
-export type TabKey = 'order' | 'tables' | 'kitchen' | 'menu' | 'dashboard' | 'dev';
+export type TabKey = 'order' | 'tables' | 'kitchen' | 'menu' | 'users' | 'dashboard' | 'dev';
 
 const UNLOCK_MS = 10 * 60 * 1000;
 const tapGuard = makeTapGuard(150);
@@ -55,6 +56,9 @@ interface StoreShape {
   reorderPending: (id: string, toIndex: number) => void;
 
   saveTables: (draft: ops.TableMap) => string | null;
+  rollbackTables: () => string | null;
+  saveCustomer: (input: { oldId?: string; name: string; phone: string; event: Customer['event'] }) => string | null;
+  deleteCustomer: (id: string) => void;
 
   setTableMode: (on: boolean) => void;
   setGst: (patch: Partial<GstSettings>) => void;
@@ -271,6 +275,24 @@ export const useStore = create<StoreShape>((set, get) => {
       if (err) return err;
       commit((d) => ops.applyTables(d, draft));
       return null;
+    },
+
+    rollbackTables() {
+      const r = ops.rollbackTables(get().data);
+      if (r.error) return r.error;
+      commit(() => r.state);
+      return null;
+    },
+
+    saveCustomer(input) {
+      const r = ops.saveCustomer(get().data, input, Date.now());
+      if (r.error) return r.error;
+      commit(() => r.state);
+      return null;
+    },
+
+    deleteCustomer(id) {
+      commit((d) => ops.deleteCustomer(d, id));
     },
 
     setTableMode(on) {

@@ -8,6 +8,7 @@ import { useStore } from '../store/store';
 import { Btn, Confirm, EmptyState, Icon, toast, useNow } from '../ui/components';
 import { colors, fonts } from '../ui/theme';
 import { BillModal } from './BillModal';
+import { RoundsModal } from './RoundsModal';
 import { TablePicker } from './TablePicker';
 
 export function OrderPanel({ sessionId }: { sessionId: string | null }) {
@@ -19,6 +20,7 @@ export function OrderPanel({ sessionId }: { sessionId: string | null }) {
   const [picker, setPicker] = useState<null | 'cook' | 'chip'>(null);
   const [showBill, setShowBill] = useState(false);
   const [askSend, setAskSend] = useState(false);
+  const [roundsOpen, setRoundsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const session = sessionId ? data.sessions[sessionId] : undefined;
@@ -192,17 +194,21 @@ export function OrderPanel({ sessionId }: { sessionId: string | null }) {
         <Row a="TOTAL" b={formatMoney(totals.total)} big />
       </View>
 
+      {session.rounds > 0 ? <Text style={styles.holdHint}>Hold Cook Bill for 5 seconds to reprint a round</Text> : null}
       <View style={styles.actions}>
         <Btn
           label={unsent.length ? `Cook Bill (${unsent.reduce((n, l) => n + l.qty, 0)})` : 'Cook Bill'}
           icon="send"
           onPress={onCook}
+          onLongPress={() => setRoundsOpen(true)}
+          delayLongPress={5000}
           disabled={busy}
           style={{ flex: 1 }}
         />
         <Btn label="Customer Bill" icon="file-text" variant="secondary" onPress={onCustomerBill} disabled={busy} style={{ flex: 1 }} />
       </View>
 
+      {roundsOpen ? <RoundsModal sessionId={session.id} onClose={() => setRoundsOpen(false)} /> : null}
       <TablePicker
         visible={picker !== null}
         title={picker === 'cook' ? 'Select a table to send the Cook Bill' : 'Select a table'}
@@ -260,5 +266,6 @@ const styles = StyleSheet.create({
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
   totalLabel: { fontFamily: fonts.medium, fontSize: 14, color: colors.text },
   totalBig: { fontFamily: fonts.heading, fontSize: 26 },
-  actions: { flexDirection: 'row', gap: 10, padding: 14 },
+  actions: { flexDirection: 'row', gap: 10, padding: 14, paddingTop: 8 },
+  holdHint: { fontFamily: fonts.body, fontSize: 11, color: colors.textSoft, textAlign: 'center', marginTop: 6 },
 });

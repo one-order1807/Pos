@@ -11,8 +11,9 @@ import { TablesScreen } from '../screens/TablesScreen';
 import { usePrinter } from '../printing/actions';
 import { reconnectSaved } from '../printing/printer';
 import { useStore, type TabKey } from '../store/store';
-import { useSyncStatus } from '../sync/firebase';
-import { Dot, Icon, ToastHost, type IconName } from './components';
+import { useSyncStatus } from '../sync/engine';
+import { Dot, Icon, ToastHost, Wordmark, type IconName } from './components';
+import { UsersScreen } from '../screens/UsersScreen';
 import { colors, fonts } from './theme';
 
 const NAV: { key: TabKey; label: string; icon: IconName }[] = [
@@ -20,6 +21,7 @@ const NAV: { key: TabKey; label: string; icon: IconName }[] = [
   { key: 'tables', label: 'Tables', icon: 'grid' },
   { key: 'kitchen', label: 'Kitchen', icon: 'coffee' },
   { key: 'menu', label: 'Menu', icon: 'book-open' },
+  { key: 'users', label: 'Users', icon: 'users' },
   { key: 'dashboard', label: 'Dashboard', icon: 'bar-chart-2' },
   { key: 'dev', label: 'Dev Mode', icon: 'settings' },
 ];
@@ -30,6 +32,7 @@ export function Shell() {
   const lock = useStore((s) => s.lock);
   const tableMode = useStore((s) => s.data.settings.main.tableMode);
   const printerCfg = useStore((s) => s.data.settings.main.printer);
+  const cafeName = useStore((s) => s.data.settings.main.bill.name);
   const pendingCount = useStore((s) => Object.values(s.data.tickets).filter((t) => t.status === 'pending').length);
   const saveError = useStore((s) => s.saveError);
   const retrySave = useStore((s) => s.retrySave);
@@ -54,7 +57,18 @@ export function Shell() {
   return (
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.topBar}>
-        <Text style={styles.brand}>ONEORDER</Text>
+        <View style={styles.lockup}>
+          <View style={styles.lockupRow}>
+            <Text style={styles.agency}>Cloud Build</Text>
+            <Text style={styles.times}>×</Text>
+            <Wordmark size={26} />
+          </View>
+          {cafeName && cafeName.trim().toUpperCase() !== 'ONEORDER' ? (
+            <Text style={styles.cafeCaption} numberOfLines={1}>
+              ONEORDER × {cafeName.trim()}
+            </Text>
+          ) : null}
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={styles.navRow}>
           {items.map((n) => {
             const active = n.key === activeTab;
@@ -117,6 +131,9 @@ export function Shell() {
         <Pane on={activeTab === 'menu'}>
           <MenuScreen />
         </Pane>
+        <Pane on={activeTab === 'users'}>
+          <UsersScreen />
+        </Pane>
         <Pane on={activeTab === 'dashboard'}>
           <DashboardScreen />
         </Pane>
@@ -145,7 +162,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  brand: { fontFamily: fonts.heading, fontSize: 28, color: colors.primary, letterSpacing: 0.5 },
+  lockup: { justifyContent: 'center', maxWidth: 260 },
+  lockupRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  agency: { fontFamily: fonts.semibold, fontSize: 12, color: colors.textSoft },
+  times: { fontFamily: fonts.medium, fontSize: 14, color: colors.mid },
+  cafeCaption: { fontFamily: fonts.medium, fontSize: 11, color: colors.textSoft, marginTop: -2 },
   navRow: { alignItems: 'center', paddingHorizontal: 4, gap: 6 },
   navItem: {
     flexDirection: 'row',

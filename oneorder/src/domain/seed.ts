@@ -21,6 +21,7 @@ export function defaultSettings(): Settings {
     pinSalt: salt,
     orderCounter: { date: '', n: 0 },
     priorityCounter: 0,
+    layoutPrev: [],
   };
 }
 

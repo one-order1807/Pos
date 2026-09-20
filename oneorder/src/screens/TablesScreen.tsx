@@ -26,7 +26,6 @@ import {
 import type { TableDef, TableStatus } from '../domain/types';
 import { useStore } from '../store/store';
 import { Btn, Chip, Confirm, Dot, EmptyState, Field, Icon, Modal, toast, useNow } from '../ui/components';
-import { PinGate } from '../ui/PinGate';
 import { colors, fonts, shadow } from '../ui/theme';
 import { STATUS_TEXT, statusColor } from './TablePicker';
 
@@ -41,13 +40,13 @@ export function TablesScreen() {
   const openTable = useStore((s) => s.openTable);
   const setTab = useStore((s) => s.setTab);
   const saveTables = useStore((s) => s.saveTables);
-  const isUnlocked = useStore((s) => s.isUnlocked);
+  const rollbackTables = useStore((s) => s.rollbackTables);
   const now = useNow(10000);
 
   const [view, setView] = useState<'layout' | 'list'>('layout');
   const [mode, setMode] = useState<Mode>(null);
   const [draft, setDraft] = useState<TableMap | null>(null);
-  const [pinFor, setPinFor] = useState<Mode>(null);
+  const [confirmRollback, setConfirmRollback] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [renaming, setRenaming] = useState<TableDef | null>(null);
   const [renameText, setRenameText] = useState('');
@@ -71,10 +70,6 @@ export function TablesScreen() {
   );
 
   function beginMode(m: Exclude<Mode, null>) {
-    if (!isUnlocked()) {
-      setPinFor(m);
-      return;
-    }
     setDraft((d) => d ?? { ...data.tables });
     setMode(m);
     setSelected([]);
@@ -210,6 +205,9 @@ export function TablesScreen() {
           {mode === 'merge' ? (
             <Btn small label={`Merge ${selected.length || ''}`.trim()} icon="git-merge" onPress={doMerge} disabled={selected.length < 2} />
           ) : null}
+          {mode === 'arrange' && (data.settings.main.layoutPrev?.length ?? 0) > 0 ? (
+            <Btn small label="Rollback to last saved layout" icon="rotate-ccw" variant="secondary" onPress={() => setConfirmRollback(true)} />
+          ) : null}
         </View>
       ) : null}
 
@@ -299,18 +297,24 @@ export function TablesScreen() {
         </View>
       )}
 
-      <PinGate
-        visible={pinFor !== null}
-        title="Owner PIN to edit tables"
-        onClose={() => setPinFor(null)}
-        onUnlocked={() => {
-          const m = pinFor;
-          setPinFor(null);
-          if (m) {
-            setDraft((d) => d ?? { ...useStore.getState().data.tables });
-            setMode(m);
-            setSelected([]);
+      <Confirm
+        visible={confirmRollback}
+        title="Roll back the layout?"
+        message="This restores the table layout from before your last save. Any unsaved edits on this screen will be lost."
+        confirmLabel="Roll back"
+        danger
+        onCancel={() => setConfirmRollback(false)}
+        onConfirm={() => {
+          setConfirmRollback(false);
+          const err = rollbackTables();
+          if (err) {
+            toast(err, 'error');
+            return;
           }
+          setDraft(null);
+          setMode(null);
+          setSelected([]);
+          toast('Previous layout restored.', 'success');
         }}
       />
       <Modal visible={!!renaming} onClose={() => setRenaming(null)} title="Rename table" width={400}>
