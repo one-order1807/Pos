@@ -15,6 +15,7 @@ import {
   layoutCustomerBill,
   sampleBillData,
   sampleCookData,
+  textOnly,
 } from '../src/printing/layout';
 import { TEMPLATES } from '../src/printing/templates';
 
@@ -351,7 +352,7 @@ test('print layout: fits width, consolidated, GST line only when on, test marked
     for (const gstOn of [false, true]) {
       const gst = { enabled: gstOn, percent: '5', number: 'GSTIN123' };
       const data = sampleBillData(bill, gst, T0);
-      const lines = layoutCustomerBill(t, data);
+      const lines = textOnly(layoutCustomerBill(t, data));
       for (const l of lines) {
         const width = l.size === 2 ? t.columns / 2 : t.columns;
         assert.ok(l.text.length <= width, `${t.id} line too long (${l.text.length}>${width}): "${l.text}"`);
@@ -361,7 +362,7 @@ test('print layout: fits width, consolidated, GST line only when on, test marked
       assert.equal(/GST \(/.test(text), gstOn, `${t.id} gst line`);
       assert.equal(text.includes('GSTIN123'), gstOn);
     }
-    const cook = layoutCookBill(t, sampleCookData(bill, T0));
+    const cook = textOnly(layoutCookBill(t, sampleCookData(bill, T0)));
     const ctext = cook.map((l) => l.text).join('\n');
     assert.ok(!/Rs/.test(ctext), 'cook bill has no prices');
     assert.ok(ctext.includes('less spicy'));

@@ -12,9 +12,13 @@ export function defaultSettings(): Settings {
     bill: {
       name: 'ONEORDER Cafe',
       logoUri: '',
+      logoRaster: null,
       address: '',
       phone: '',
       footer: 'Thank you! Visit again.',
+      qrText: '',
+      qrRaster: null,
+      showOccasionGreeting: false,
     },
     printer: { templateId: 't2', deviceId: '', deviceName: '' },
     pinHash: hashPin(DEFAULT_DEV_PIN, salt),
@@ -22,6 +26,7 @@ export function defaultSettings(): Settings {
     orderCounter: { date: '', n: 0 },
     priorityCounter: 0,
     layoutPrev: [],
+    bubbleEnabled: false,
   };
 }
 

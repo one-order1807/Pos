@@ -20,6 +20,7 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
+  const [scrollSignal, setScrollSignal] = useState(0);
 
   useEffect(() => {
     if (session) {
@@ -36,6 +37,7 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
   const template = templateById(settings.printer.templateId);
   const lines = customerBillLines(data, session, Date.now());
   const totals = sessionTotals(session, settings.gst);
+  const alreadyBilled = !!session.billPrintedAt;
 
   async function onPrint() {
     if (busy) return;
@@ -43,6 +45,7 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
     setCustomer(sessionId!, name, phone);
     const r = await printCustomerBill(sessionId!);
     setBusy(false);
+    setScrollSignal(Date.now());
     if (r.ok) toast('Customer Bill printed.', 'success');
     else toast(`Not printed: ${r.error}`, 'error');
   }
@@ -76,12 +79,23 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
     completePayment();
   }
 
+  function onCloseOrder() {
+    // The countdown popup exists to protect against closing an order that hasn't been billed
+    // yet. Once the Customer Bill has already been printed, that protection has done its job -
+    // closing goes straight through.
+    if (alreadyBilled) {
+      completePayment();
+      return;
+    }
+    setCloseOpen(true);
+  }
+
   return (
     <>
       <Modal visible onClose={onClose} title="Customer Bill" width={720}>
         <View style={styles.body}>
           <View style={styles.left}>
-            <Receipt lines={lines} columns={template.columns} maxHeight={420} />
+            <Receipt lines={lines} columns={template.columns} maxHeight={420} autoScrollSignal={scrollSignal} />
           </View>
           <View style={styles.right}>
             <Field label="Customer name (optional)" value={name} onChangeText={setName} placeholder="Name" />
@@ -100,7 +114,7 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
               ))}
             </View>
             <Btn label="Print Customer Bill" icon="printer" variant="secondary" full onPress={onPrint} disabled={busy} style={{ marginBottom: 10 }} />
-            <Btn label="Payment Received / Close Order" icon="check-circle" variant="success" full onPress={() => setCloseOpen(true)} disabled={busy} />
+            <Btn label="Payment Received / Close Order" icon="check-circle" variant="success" full onPress={onCloseOrder} disabled={busy} />
             <Text style={styles.hint}>Closing releases the table and resets its timer.</Text>
           </View>
         </View>
@@ -123,7 +137,6 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
           label="Close Anyway"
           seconds={CLOSE_DELAY_SECONDS}
           active={closeOpen}
-          variant="secondary"
           full
           onPress={completePayment}
         />

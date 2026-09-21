@@ -2,19 +2,47 @@ import type { BillLine } from '../domain/bill';
 import { formatMoney, formatPercent } from '../domain/money';
 import type { BillSettings, GstSettings, TicketItem } from '../domain/types';
 import type { PrintTemplate } from './templates';
+import { rasterAssetToPrintImage } from './raster';
 
 export interface PrintLine {
+  kind?: 'text';
   text: string;
   align?: 'left' | 'center' | 'right';
   bold?: boolean;
   size?: 1 | 2;
   tall?: boolean;
+  brand?: boolean; // the fixed "ONE ORDER x Cloud Build" line - Receipt.tsx styles this with the wordmark font
 }
+
+export interface PrintImage {
+  kind: 'image';
+  width: number;
+  height: number;
+  bits: Uint8Array; // packed 1bpp, MSB-first, row-major, 1 = black
+  align?: 'left' | 'center' | 'right';
+}
+
+export type PrintBlock = PrintLine | PrintImage;
+
+export function isPrintImage(b: PrintBlock): b is PrintImage {
+  return b.kind === 'image';
+}
+
+export function isPrintLine(b: PrintBlock): b is PrintLine {
+  return b.kind !== 'image';
+}
+
+export function textOnly(blocks: PrintBlock[]): PrintLine[] {
+  return blocks.filter(isPrintLine);
+}
+
+const BRAND_FOOTER = 'ONE ORDER x Cloud Build';
 
 export interface BillData {
   bill: BillSettings;
   gst: GstSettings;
   label: string;
+  tableLabel?: string;
   orderNo: number;
   typeLabel: string;
   lines: BillLine[];
@@ -25,6 +53,7 @@ export interface BillData {
   when: number;
   paymentLabel?: string;
   customer?: string;
+  occasionLine?: string;
   isTest?: boolean;
 }
 
@@ -83,30 +112,23 @@ function rule(width: number, ch = '-'): PrintLine {
   return { text: ch.repeat(width) };
 }
 
-function fmtDate(ms: number): string {
+function fmtDatePart(ms: number): string {
   const d = new Date(ms);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-function header(t: PrintTemplate, bill: BillSettings, gst?: GstSettings): PrintLine[] {
-  const out: PrintLine[] = [];
-  const w = t.columns;
-  const name = bill.name.trim() || 'ONEORDER';
-  const big = t.style !== 'compact' || name.length <= Math.floor(w / 2);
-  if (big) {
-    for (const l of wrapText(name.toUpperCase(), Math.floor(w / 2))) {
-      out.push({ text: l, align: 'center', bold: true, size: 2 });
-    }
-  } else {
-    for (const l of wrapText(name.toUpperCase(), w)) out.push({ text: l, align: 'center', bold: true });
-  }
-  if (bill.address.trim()) for (const l of wrapText(bill.address, w)) out.push({ text: l, align: 'center' });
-  if (bill.phone.trim()) out.push({ text: `Ph: ${bill.phone.trim()}`, align: 'center' });
-  if (gst?.enabled && gst.number.trim()) {
-    for (const l of wrapText(`GST: ${gst.number.trim()}`, w)) out.push({ text: l, align: 'center' });
-  }
-  return out;
+function fmtTimePart(ms: number): string {
+  const d = new Date(ms);
+  let h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, '0');
+  const suffix = h < 12 ? 'AM' : 'PM';
+  h = h % 12 === 0 ? 12 : h % 12;
+  return `${h}:${m} ${suffix}`;
+}
+
+function ruleChar(t: PrintTemplate): string {
+  return t.style === 'boxed' ? '=' : '-';
 }
 
 function testBanner(t: PrintTemplate): PrintLine[] {
@@ -121,98 +143,124 @@ function testBanner(t: PrintTemplate): PrintLine[] {
   ];
 }
 
-export function layoutCustomerBill(t: PrintTemplate, d: BillData): PrintLine[] {
+function headerBlocks(t: PrintTemplate, bill: BillSettings, gst?: GstSettings): PrintBlock[] {
+  const out: PrintBlock[] = [];
   const w = t.columns;
-  const out: PrintLine[] = [];
-  if (d.isTest) out.push(...testBanner(t));
-  out.push(...header(t, d.bill, d.gst));
-  const boxed = t.style === 'boxed';
-  out.push(rule(w, boxed ? '=' : '-'));
-  const orderTitle = `Order #${d.orderNo}`;
-  for (const l of twoCol(orderTitle, d.label, w)) out.push({ text: l });
-  for (const l of twoCol(fmtDate(d.when), d.typeLabel, w)) out.push({ text: l });
-  if (d.customer) for (const l of wrapText(`Customer: ${d.customer}`, w)) out.push({ text: l });
-  out.push(rule(w, boxed ? '=' : '-'));
+  const logo = rasterAssetToPrintImage(bill.logoRaster);
+  if (logo) out.push({ ...logo, align: 'center' });
+  const name = bill.name.trim() || 'ONEORDER';
+  for (const l of wrapText(name.toUpperCase(), w)) out.push({ text: l, align: 'center', bold: true });
+  if (bill.address.trim()) for (const l of wrapText(bill.address, w)) out.push({ text: l, align: 'center' });
+  if (bill.phone.trim()) out.push({ text: `Ph: ${bill.phone.trim()}`, align: 'center' });
+  if (gst?.enabled && gst.number.trim()) {
+    for (const l of wrapText(`GST: ${gst.number.trim()}`, w)) out.push({ text: l, align: 'center' });
+  }
+  return out;
+}
 
-  if (t.style === 'compact') {
-    out.push({ text: twoCol('Item', 'Amount', w)[0], bold: true });
-    out.push(rule(w));
-    for (const l of d.lines) {
-      for (const n of wrapText(l.name, w)) out.push({ text: n });
-      const left = `  ${l.qty} x ${formatMoney(l.unitPrice).replace('Rs ', '')}`;
-      for (const r of twoCol(left, formatMoney(l.amount).replace('Rs ', ''), w)) out.push({ text: r });
-    }
-  } else if (t.style === 'wide') {
+function footerBlocks(t: PrintTemplate, bill: BillSettings): PrintBlock[] {
+  const out: PrintBlock[] = [];
+  const w = t.columns;
+  if (bill.footer.trim()) {
+    for (const l of wrapText(bill.footer, w)) out.push({ text: l, align: 'center' });
+  }
+  const qr = rasterAssetToPrintImage(bill.qrRaster);
+  if (qr) out.push({ ...qr, align: 'center' });
+  out.push({ text: BRAND_FOOTER, align: 'center', bold: true, brand: true });
+  return out;
+}
+
+function amountColumnWidth(lines: BillLine[], total: number): number {
+  let longest = formatMoney(total).length;
+  for (const l of lines) longest = Math.max(longest, formatMoney(l.amount).length);
+  return longest + 1;
+}
+
+export function layoutCustomerBill(t: PrintTemplate, d: BillData): PrintBlock[] {
+  const w = t.columns;
+  const out: PrintBlock[] = [];
+  const rc = ruleChar(t);
+  if (d.isTest) out.push(...testBanner(t));
+  out.push(...headerBlocks(t, d.bill, d.gst));
+  out.push(rule(w, rc));
+
+  for (const l of twoCol(`Bill #${d.orderNo}`, d.tableLabel ? `Table ${d.tableLabel}` : d.typeLabel, w)) {
+    out.push({ text: l });
+  }
+  for (const l of twoCol(fmtDatePart(d.when), fmtTimePart(d.when), w)) out.push({ text: l });
+  if (d.customer) for (const l of wrapText(`Customer: ${d.customer}`, w)) out.push({ text: l });
+  out.push(rule(w, rc));
+
+  const amtW = amountColumnWidth(d.lines, d.total);
+  if (t.style === 'wide') {
     const qtyW = 5;
     const rateW = 11;
-    const amtW = 12;
     const nameW = w - qtyW - rateW - amtW;
-    out.push({
-      text: pad('Item', nameW) + padLeft('Qty', qtyW) + padLeft('Rate', rateW) + padLeft('Amount', amtW),
-      bold: true,
-    });
+    out.push({ text: pad('Item', nameW) + padLeft('Qty', qtyW) + padLeft('Rate', rateW) + padLeft('Amt', amtW), bold: true });
     out.push(rule(w));
     for (const l of d.lines) {
       const nameLines = wrapText(l.name, nameW - 1);
       out.push({
         text:
-          pad(nameLines[0], nameW) +
-          padLeft(`${l.qty}x`, qtyW) +
-          padLeft(formatMoney(l.unitPrice), rateW) +
-          padLeft(formatMoney(l.amount), amtW),
+          pad(nameLines[0], nameW) + padLeft(`${l.qty}x`, qtyW) + padLeft(formatMoney(l.unitPrice), rateW) + padLeft(formatMoney(l.amount), amtW),
       });
       for (const extra of nameLines.slice(1)) out.push({ text: extra });
     }
-  } else {
-    out.push({ text: twoCol('QTY  ITEM', 'AMOUNT', w)[0], bold: true });
+  } else if (t.style === 'boxed') {
+    const qtyW = 5;
+    const nameW = w - qtyW - amtW;
+    out.push({ text: pad('Qty  Item', nameW + qtyW) + padLeft('Amt', amtW), bold: true });
     out.push(rule(w, '.'));
     for (const l of d.lines) {
-      const left = `${padLeft(String(l.qty) + 'x', 4)}  ${l.name}`;
-      const amount = formatMoney(l.amount);
-      const avail = w - amount.length - 1;
-      const wrapped = wrapText(left.trimStart(), avail);
-      wrapped.forEach((ln, i) => {
-        if (i === wrapped.length - 1) out.push({ text: pad(ln, w - amount.length) + amount, bold: true });
+      const left = `${padLeft(String(l.qty) + 'x', qtyW - 1)} ${l.name}`;
+      const nameLines = wrapText(left, nameW + qtyW - 1);
+      nameLines.forEach((ln, i) => {
+        if (i === nameLines.length - 1) out.push({ text: pad(ln, w - amtW) + padLeft(formatMoney(l.amount), amtW), bold: true });
         else out.push({ text: ln, bold: true });
       });
     }
-  }
-
-  out.push(rule(w, boxed ? '=' : '-'));
-  const totalsWidth = w;
-  if (d.gst.enabled) {
-    for (const l of twoCol('Subtotal', formatMoney(d.subtotal), totalsWidth)) out.push({ text: l });
-    for (const l of twoCol(`GST (${formatPercent(d.gstPercent)}%)`, formatMoney(d.gstAmount), totalsWidth)) {
-      out.push({ text: l });
+  } else {
+    const qtyW = 4;
+    const nameW = w - qtyW - amtW;
+    out.push({ text: pad('Item', nameW) + padLeft('Qty', qtyW) + padLeft('Amt', amtW), bold: true });
+    out.push(rule(w));
+    for (const l of d.lines) {
+      const nameLines = wrapText(l.name, nameW - 1);
+      out.push({ text: pad(nameLines[0], nameW) + padLeft(String(l.qty), qtyW) + padLeft(formatMoney(l.amount), amtW) });
+      for (const extra of nameLines.slice(1)) out.push({ text: extra });
     }
   }
-  const totalStr = formatMoney(d.total);
-  const halfW = Math.floor(w / 2);
-  if (`TOTAL ${totalStr}`.length <= halfW) {
-    out.push({ text: twoCol('TOTAL', totalStr, halfW)[0], bold: true, size: 2, align: 'right' });
-  } else {
-    for (const l of twoCol('TOTAL', totalStr, w)) out.push({ text: l, bold: true, tall: true });
+  out.push(rule(w, rc));
+
+  if (d.gst.enabled) {
+    for (const l of twoCol('Subtotal', formatMoney(d.subtotal), w)) out.push({ text: l });
+    for (const l of twoCol(`GST (${formatPercent(d.gstPercent)}%)`, formatMoney(d.gstAmount), w)) out.push({ text: l });
+    out.push(rule(w, rc));
   }
-  out.push(rule(w, boxed ? '=' : '-'));
-  if (d.paymentLabel) out.push({ text: `Paid by: ${d.paymentLabel}`, align: 'center' });
-  if (d.bill.footer.trim()) {
-    for (const l of wrapText(d.bill.footer, w)) out.push({ text: l, align: 'center' });
-  }
+  for (const l of twoCol('TOTAL', formatMoney(d.total), w)) out.push({ text: l, bold: true, tall: true });
+  out.push(rule(w, rc));
+
+  if (d.paymentLabel) out.push({ text: `Payment: ${d.paymentLabel}`, align: 'center' });
+  if (d.occasionLine) out.push({ text: d.occasionLine, align: 'center', bold: true });
+  out.push(rule(w, rc));
+
+  out.push(...footerBlocks(t, d.bill));
   if (d.isTest) out.push(...testBanner(t));
   return out;
 }
 
-export function layoutCookBill(t: PrintTemplate, d: CookData): PrintLine[] {
+export function layoutCookBill(t: PrintTemplate, d: CookData): PrintBlock[] {
   const w = t.columns;
-  const out: PrintLine[] = [];
+  const out: PrintBlock[] = [];
+  const rc = ruleChar(t);
   if (d.isTest) out.push(...testBanner(t));
   out.push({ text: 'COOK BILL', align: 'center', bold: true, size: 2 });
   for (const l of wrapText(d.label, Math.floor(w / 2))) out.push({ text: l, align: 'center', bold: true, size: 2 });
-  out.push(rule(w, t.style === 'boxed' ? '=' : '-'));
+  out.push(rule(w, rc));
   const roundText = d.round === null ? 'ALL ROUNDS' : `Round ${d.round}`;
   for (const l of twoCol(`Order #${d.orderNo}  ${roundText}`, d.typeLabel, w)) out.push({ text: l });
-  out.push({ text: fmtDate(d.when) });
-  out.push(rule(w, t.style === 'boxed' ? '=' : '-'));
+  out.push({ text: `${fmtDatePart(d.when)}  ${fmtTimePart(d.when)}` });
+  out.push(rule(w, rc));
   for (const it of d.items) {
     const wrapped = wrapText(`${it.qty} x ${it.name}`, Math.floor(w / 2));
     for (const l of wrapped) out.push({ text: l, bold: true, size: 2 });
@@ -220,16 +268,16 @@ export function layoutCookBill(t: PrintTemplate, d: CookData): PrintLine[] {
       for (const n of wrapText(`* ${it.note}`, w - 2)) out.push({ text: `  ${n}` });
     }
   }
-  out.push(rule(w, t.style === 'boxed' ? '=' : '-'));
+  out.push(rule(w, rc));
   if (d.isTest) out.push(...testBanner(t));
   return out;
 }
 
 export function sampleBillData(bill: BillSettings, gst: GstSettings, now: number): BillData {
   const lines: BillLine[] = [
-    { key: 'a', name: 'Sample Masala Dosa', qty: 2, unitPrice: 20, amount: 40 },
-    { key: 'b', name: 'Sample Filter Coffee with Extra Long Name Here', qty: 2, unitPrice: 15, amount: 30 },
-    { key: 'c', name: 'Sample Brownie', qty: 1, unitPrice: 30, amount: 30 },
+    { key: 'a', name: 'Espresso', qty: 5, unitPrice: 90, amount: 450 },
+    { key: 'b', name: 'Hot Chocolate', qty: 2, unitPrice: 140, amount: 280 },
+    { key: 'c', name: 'Green Tea', qty: 1, unitPrice: 35, amount: 35 },
   ];
   const subtotal = lines.reduce((s, l) => s + l.amount, 0);
   const pct = gst.enabled ? Number(String(gst.percent).replace('%', '')) || 0 : 0;
@@ -237,8 +285,9 @@ export function sampleBillData(bill: BillSettings, gst: GstSettings, now: number
   return {
     bill,
     gst,
-    label: 'T-5',
-    orderNo: 0,
+    label: 'T-1',
+    tableLabel: 'T-1',
+    orderNo: 1025,
     typeLabel: 'Dine-in',
     lines,
     subtotal,
@@ -246,6 +295,8 @@ export function sampleBillData(bill: BillSettings, gst: GstSettings, now: number
     gstAmount,
     total: subtotal + gstAmount,
     when: now,
+    paymentLabel: 'UPI',
+    occasionLine: bill.showOccasionGreeting ? 'Happy Birthday, Rahul!' : undefined,
     isTest: true,
   };
 }

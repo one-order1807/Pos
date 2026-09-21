@@ -95,7 +95,13 @@ export function DashboardScreen() {
   );
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={{ padding: 12, paddingBottom: 40 }}>
+    <View style={styles.root}>
+      <View style={styles.backdrop} pointerEvents="none">
+        <View style={[styles.blob, { top: -60, left: -40, backgroundColor: blue.mid500 }]} />
+        <View style={[styles.blob, { top: 140, right: -70, backgroundColor: colors.coral }]} />
+        <View style={[styles.blob, { top: 420, left: -60, backgroundColor: colors.teal }]} />
+      </View>
+      <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 40 }}>
       <View style={styles.head}>
         <Text style={styles.title}>Dashboard</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
@@ -292,7 +298,8 @@ export function DashboardScreen() {
         <DrillList rows={drillRows} now={now} cards={drill === 'sales'} onOpen={setDetailId} />
       </Modal>
       <OrderDetail id={detailId} onClose={() => setDetailId(null)} />
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -552,7 +559,16 @@ const styles = StyleSheet.create({
   },
   headlineText: { flex: 1, fontFamily: fonts.semibold, fontSize: 14, color: colors.primaryDark },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  card: { backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, ...(shadow as object) },
+  backdrop: { ...StyleSheet.absoluteFill, overflow: 'hidden' },
+  blob: { position: 'absolute', width: 260, height: 260, borderRadius: 130, opacity: 0.1 },
+  card: {
+    backgroundColor: 'rgba(255,255,255,0.78)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.9)',
+    padding: 14,
+    ...(shadow as object),
+  },
   kpi: { borderRadius: 16, padding: 16, ...(shadow as object) },
   kpiTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   kpiIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },

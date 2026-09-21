@@ -10,8 +10,10 @@ import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useStore } from './src/store/store';
 import { Btn, Skeleton } from './src/ui/components';
+import { BubbleController } from './src/ui/BubbleController';
 import { Shell } from './src/ui/Shell';
 import { Splash } from './src/ui/Splash';
+import { UpdateWatcher } from './src/ui/UpdateBanner';
 import { colors, fonts } from './src/ui/theme';
 
 let splashShown = false;
@@ -74,6 +76,8 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="dark" />
       <Shell />
+      <UpdateWatcher />
+      <BubbleController />
     </SafeAreaProvider>
   );
 }

@@ -30,7 +30,11 @@
         "ACCESS_FINE_LOCATION",
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
-        "android.permission.BLUETOOTH_CONNECT"
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -48,6 +52,7 @@
           "bluetoothAlwaysPermission": "ONEORDER connects to your Bluetooth thermal printer to print bills."
         }
       ],
+      "expo-updates",
       "./plugins/withInlineModulesFix"
     ],
     "backgroundColor": "#FFFFFF",
@@ -56,6 +61,12 @@
         "projectId": "c1b2a459-af83-455d-9458-93b75cf4e227"
       }
     },
-    "owner": "one-orders-team"
+    "owner": "one-orders-team",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c1b2a459-af83-455d-9458-93b75cf4e227"
+    }
   }
 }

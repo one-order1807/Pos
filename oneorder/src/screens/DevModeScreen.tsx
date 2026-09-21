@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Image, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { AppState, Image, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { hasOverlayPermission, isBubbleSupported, requestOverlayPermission } from '../../modules/bubble';
 import { parseBackup, buildBackup, buildMenuExport, previewBackup, type BackupFile, type BackupPreview } from '../domain/backup';
 import { computeTotals } from '../domain/bill';
 import { formatMoney, formatPercent, parseGstPercent } from '../domain/money';
 import { useStore } from '../store/store';
 import { syncNow, useSyncStatus } from '../sync/engine';
+import { rasterizeLogo, rasterizeQr } from '../printing/assets';
+import { rasterAssetToBmpDataUri } from '../printing/raster';
 import { pickLogo, pickTextFile, shareJson } from '../util/files';
 import { Btn, Card, Confirm, Field, Icon, Modal, SectionTitle, toast } from '../ui/components';
 import { PinGate } from '../ui/PinGate';
@@ -57,6 +60,7 @@ export function DevModeScreen() {
       <BillSetup />
       <GstSetup />
       <TableModeSetup />
+      <BubbleSetup />
       <Card style={styles.section}>
         <SectionTitle>Printer setup</SectionTitle>
         <PrinterPanel />
@@ -74,6 +78,8 @@ function BillSetup() {
   const setBill = useStore((s) => s.setBill);
   const [form, setForm] = useState(bill);
   const [dirty, setDirty] = useState(false);
+  const [qrText, setQrText] = useState(bill.qrText);
+  const [busy, setBusy] = useState(false);
 
   function edit(patch: Partial<typeof bill>) {
     setForm((f) => ({ ...f, ...patch }));
@@ -81,12 +87,25 @@ function BillSetup() {
   }
 
   async function chooseLogo() {
+    if (busy) return;
+    setBusy(true);
     try {
       const uri = await pickLogo();
-      if (uri) edit({ logoUri: uri });
+      if (!uri) return;
+      const logoRaster = await rasterizeLogo(uri);
+      edit({ logoUri: uri, logoRaster });
     } catch (e: any) {
-      toast(`Could not load the logo: ${e?.message ?? e}`, 'error');
+      toast(`Logo not saved: ${e?.message ?? e} Use a PNG file.`, 'error', 5000);
+    } finally {
+      setBusy(false);
     }
+  }
+
+  function saveQr() {
+    const text = qrText.trim();
+    const qrRaster = text ? rasterizeQr(text) : null;
+    setBill({ qrText: text, qrRaster });
+    toast(text ? 'QR code saved.' : 'QR code removed.', 'success');
   }
 
   return (
@@ -98,18 +117,24 @@ function BillSetup() {
       <Field label="Phone" value={form.phone} onChangeText={(t) => edit({ phone: t })} keyboardType="phone-pad" maxLength={20} />
       <Field label="Footer / thank-you text" value={form.footer} onChangeText={(t) => edit({ footer: t })} maxLength={80} />
       <View style={styles.logoRow}>
-        {form.logoUri ? <Image source={{ uri: form.logoUri }} style={styles.logo} resizeMode="contain" /> : <View style={[styles.logo, styles.logoEmpty]}><Icon name="image" size={22} color={colors.textSoft} /></View>}
+        {form.logoRaster ? (
+          <Image source={{ uri: rasterAssetToBmpDataUri(form.logoRaster) }} style={styles.logo} resizeMode="contain" />
+        ) : (
+          <View style={[styles.logo, styles.logoEmpty]}>
+            <Icon name="image" size={22} color={colors.textSoft} />
+          </View>
+        )}
         <View style={{ flex: 1 }}>
           <Text style={styles.label}>Logo</Text>
-          <Text style={styles.hint}>Shown on the on-screen bill. Thermal receipts print the cafe name as text.</Text>
+          <Text style={styles.hint}>PNG only. This prints at the top of every bill, shown here exactly as it will print.</Text>
         </View>
-        <Btn small label={form.logoUri ? 'Change' : 'Choose'} icon="upload" variant="secondary" onPress={chooseLogo} />
-        {form.logoUri ? <Btn small icon="trash-2" variant="secondary" onPress={() => edit({ logoUri: '' })} /> : null}
+        <Btn small label={form.logoRaster ? 'Change' : 'Choose'} icon="upload" variant="secondary" onPress={chooseLogo} disabled={busy} />
+        {form.logoRaster ? <Btn small icon="trash-2" variant="secondary" onPress={() => edit({ logoUri: '', logoRaster: null })} disabled={busy} /> : null}
       </View>
       <Btn
         label="Save bill setup"
         icon="check"
-        disabled={!dirty}
+        disabled={!dirty || busy}
         onPress={() => {
           setBill({
             name: form.name.trim() || 'ONEORDER',
@@ -117,11 +142,32 @@ function BillSetup() {
             phone: form.phone.trim(),
             footer: form.footer.trim(),
             logoUri: form.logoUri,
+            logoRaster: form.logoRaster,
           });
           setDirty(false);
           toast('Bill setup saved.', 'success');
         }}
+        style={{ marginBottom: 16 }}
       />
+
+      <Text style={styles.sub}>QR code</Text>
+      <Text style={styles.hint}>A Google Review link, or any other URL. Printed at a size that actually scans on thermal paper.</Text>
+      <Field label="QR link" value={qrText} onChangeText={setQrText} placeholder="https://g.page/r/..." autoCapitalize="none" />
+      {bill.qrRaster ? <Image source={{ uri: rasterAssetToBmpDataUri(bill.qrRaster) }} style={styles.qrPreview} resizeMode="contain" /> : null}
+      <Btn small label="Save QR code" icon="check" onPress={saveQr} disabled={qrText.trim() === bill.qrText.trim()} style={{ marginBottom: 16 }} />
+
+      <View style={styles.switchRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.label}>Show occasion greetings on bill</Text>
+          <Text style={styles.hint}>If the customer has a Birthday or Anniversary set in Users, print a line for it near the footer.</Text>
+        </View>
+        <Switch
+          value={bill.showOccasionGreeting}
+          onValueChange={(v) => setBill({ showOccasionGreeting: v })}
+          trackColor={{ true: colors.primary }}
+          accessibilityLabel="Occasion greeting toggle"
+        />
+      </View>
     </Card>
   );
 }
@@ -235,6 +281,66 @@ function TableModeSetup() {
           }}
           trackColor={{ true: colors.primary }}
           accessibilityLabel="Table mode toggle"
+        />
+      </View>
+    </Card>
+  );
+}
+
+function BubbleSetup() {
+  const enabled = useStore((s) => s.data.settings.main.bubbleEnabled);
+  const setBubbleEnabled = useStore((s) => s.setBubbleEnabled);
+  const supported = isBubbleSupported();
+  const [awaitingPermission, setAwaitingPermission] = useState(false);
+
+  useEffect(() => {
+    if (!awaitingPermission) return undefined;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      setAwaitingPermission(false);
+      if (hasOverlayPermission()) {
+        setBubbleEnabled(true);
+        toast('Floating bubble ON.', 'success');
+      } else {
+        toast('Permission not granted — the floating bubble stays off.', 'error');
+      }
+    });
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [awaitingPermission]);
+
+  function onToggle(v: boolean) {
+    if (!v) {
+      setBubbleEnabled(false);
+      toast('Floating bubble OFF.', 'success');
+      return;
+    }
+    if (hasOverlayPermission()) {
+      setBubbleEnabled(true);
+      toast('Floating bubble ON.', 'success');
+      return;
+    }
+    setAwaitingPermission(true);
+    requestOverlayPermission();
+  }
+
+  return (
+    <Card style={styles.section}>
+      <View style={styles.switchRow}>
+        <View style={{ flex: 1 }}>
+          <SectionTitle>Floating bubble</SectionTitle>
+          <Text style={styles.hint}>
+            {supported
+              ? 'When the app is minimized, show a small floating bubble to reopen it. Needs the "Display over other apps" permission.'
+              : 'Needs a real Android build (not Expo Go) on Android 8 or newer.'}
+          </Text>
+        </View>
+        <Switch
+          value={enabled}
+          onValueChange={onToggle}
+          disabled={!supported || awaitingPermission}
+          trackColor={{ true: colors.primary }}
+          accessibilityLabel="Floating bubble toggle"
         />
       </View>
     </Card>
@@ -389,6 +495,7 @@ const styles = StyleSheet.create({
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
   logo: { width: 56, height: 56, borderRadius: 10 },
   logoEmpty: { backgroundColor: colors.muted, alignItems: 'center', justifyContent: 'center' },
+  qrPreview: { width: 110, height: 110, marginBottom: 10, borderRadius: 8, backgroundColor: '#fff' },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   preview: { marginTop: 14, padding: 12, backgroundColor: colors.bg, borderRadius: 10 },
   pRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },

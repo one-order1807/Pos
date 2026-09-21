@@ -1,41 +1,35 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import Svg, { Circle, Ellipse, Path, Polygon, Rect } from 'react-native-svg';
+import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
 import { colors, fonts } from './theme';
 
 const FILL_H = 80;
 const TOTAL_MS = 3000;
 
-function Pizza() {
+// Abstract wedge - reads as "a slice" through shape and colour alone, not a literal illustration.
+function Wedge() {
   return (
-    <Svg width={92} height={92} viewBox="0 0 92 92">
-      <Circle cx={46} cy={46} r={42} fill="#E9A23B" />
-      <Circle cx={46} cy={46} r={34} fill="#F8CB5B" />
-      {[
-        [34, 32],
-        [58, 36],
-        [46, 54],
-        [30, 56],
-        [62, 58],
-      ].map(([x, y], i) => (
-        <Circle key={i} cx={x} cy={y} r={6.5} fill="#DC2626" />
-      ))}
-      <Circle cx={46} cy={30} r={2.6} fill="#166534" />
-      <Circle cx={40} cy={46} r={2.6} fill="#166534" />
-      <Circle cx={54} cy={48} r={2.6} fill="#166534" />
+    <Svg width={80} height={80} viewBox="0 0 80 80">
+      <Path d="M40 6 L75 72 A40 40 0 0 1 5 72 Z" fill={colors.amber} opacity={0.92} />
+      <Path d="M40 6 L75 72 A40 40 0 0 1 5 72 Z" fill="none" stroke={colors.primary} strokeWidth={3} strokeLinejoin="round" />
+      <Circle cx={40} cy={42} r={4} fill={colors.coral} />
+      <Circle cx={25} cy={58} r={3} fill={colors.coral} />
+      <Circle cx={55} cy={58} r={3} fill={colors.coral} />
     </Svg>
   );
 }
 
-function Sandwich() {
+// A calligraphy-style flourish - decorative, not representational.
+function Flourish() {
   return (
-    <Svg width={96} height={84} viewBox="0 0 96 84">
-      <Polygon points="6,66 48,10 90,66" fill="#D9A15B" />
-      <Polygon points="16,58 48,17 80,58" fill="#F3D08F" />
-      <Path d="M14 58 Q24 50 34 58 T54 58 T74 58 T84 58 L84 64 L14 64 Z" fill="#22A34A" />
-      <Rect x={16} y={62} width={64} height={6} rx={3} fill="#EF4444" />
-      <Polygon points="12,68 84,68 78,74 18,74" fill="#FACC15" />
-      <Rect x={6} y={72} width={84} height={9} rx={4.5} fill="#C98A45" />
+    <Svg width={112} height={70} viewBox="0 0 112 70">
+      <Path
+        d="M4 50 C 26 8, 54 8, 40 34 C 30 52, 70 60, 78 30 C 84 8, 100 8, 106 24"
+        stroke={colors.coral}
+        strokeWidth={7}
+        strokeLinecap="round"
+        fill="none"
+      />
     </Svg>
   );
 }
@@ -60,9 +54,9 @@ export function Splash({ name, onDone }: { name: string; onDone: () => void }) {
     Animated.timing(nameAnim, { toValue: 1, duration: 400, delay: 400, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
     Animated.sequence([
       Animated.delay(1000),
-      Animated.timing(foods, { toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.delay(700),
-      Animated.timing(foods, { toValue: 2, duration: 500, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(foods, { toValue: 1, duration: 650, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+      Animated.delay(800),
+      Animated.timing(foods, { toValue: 2, duration: 550, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
     ]).start();
     const loops = steam.map((v, i) =>
       Animated.loop(
@@ -131,26 +125,22 @@ export function Splash({ name, onDone }: { name: string; onDone: () => void }) {
             { left: width / 2 - 200, transform: [{ translateX: foods.interpolate({ inputRange: [0, 1, 2], outputRange: [-offscreen, 0, -offscreen] }) }] },
           ]}
         >
-          <Pizza />
+          <Wedge />
         </Animated.View>
         <Animated.View
           pointerEvents="none"
           style={[
             styles.food,
-            { left: width / 2 + 104, transform: [{ translateX: foods.interpolate({ inputRange: [0, 1, 2], outputRange: [offscreen, 0, offscreen] }) }] },
+            { left: width / 2 + 90, transform: [{ translateX: foods.interpolate({ inputRange: [0, 1, 2], outputRange: [offscreen, 0, offscreen] }) }] },
           ]}
         >
-          <Sandwich />
+          <Flourish />
         </Animated.View>
       </View>
 
       <Animated.View style={{ opacity: nameAnim, transform: [{ translateY: lift }], alignItems: 'center' }}>
-        <View style={styles.lockup}>
-          <Text style={styles.agency}>Cloud Build</Text>
-          <Text style={styles.times}>×</Text>
-          <Text style={styles.name}>ONEORDER</Text>
-        </View>
-        {showCafe ? <Text style={styles.cafe}>ONEORDER × {name.trim()}</Text> : null}
+        {showCafe ? <Text style={styles.cafe}>{name.trim()}</Text> : null}
+        <Text style={styles.name}>ONEORDER</Text>
       </Animated.View>
     </Pressable>
   );
@@ -176,9 +166,6 @@ const styles = StyleSheet.create({
   },
   coffee: { width: '100%', backgroundColor: colors.amber },
   food: { position: 'absolute', top: 70 },
-  lockup: { marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  agency: { fontFamily: fonts.semibold, fontSize: 18, color: colors.textSoft },
-  times: { fontFamily: fonts.medium, fontSize: 22, color: colors.mid },
-  name: { fontFamily: fonts.wordmark, fontSize: 44, color: colors.primary, letterSpacing: 1 },
-  cafe: { marginTop: 4, fontFamily: fonts.medium, fontSize: 16, color: colors.textSoft },
+  name: { marginTop: 4, fontFamily: fonts.wordmark, fontSize: 22, color: colors.textSoft, letterSpacing: 0.5 },
+  cafe: { fontFamily: fonts.heading, fontSize: 40, color: colors.primary },
 });

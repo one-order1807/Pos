@@ -102,7 +102,7 @@ export function Skeleton({ width = '100%', height = 16, style }: { width?: numbe
 
 // ---------- buttons ----------
 
-type BtnVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'success';
+type BtnVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'success' | 'muted';
 
 export function Btn({
   label,
@@ -112,6 +112,7 @@ export function Btn({
   icon,
   variant = 'primary',
   disabled,
+  dimDisabled = true,
   style,
   small,
   full,
@@ -123,6 +124,8 @@ export function Btn({
   icon?: IconName;
   variant?: BtnVariant;
   disabled?: boolean;
+  /** Set false when the variant itself already reads as "not ready yet" (e.g. CountdownBtn's muted state) - avoids a second, redundant faded look on top of it. */
+  dimDisabled?: boolean;
   style?: StyleProp<ViewStyle>;
   small?: boolean;
   full?: boolean;
@@ -136,9 +139,10 @@ export function Btn({
     danger: { bg: colors.red, fg: '#fff', border: colors.red },
     success: { bg: '#16A34A', fg: '#fff', border: '#16A34A' },
     ghost: { bg: 'transparent', fg: colors.primary, border: 'transparent' },
+    muted: { bg: colors.muted, fg: colors.textSoft, border: colors.border },
   }[variant];
   return (
-    <Animated.View style={[{ transform: [{ scale }], opacity: disabled ? 0.45 : 1 }, full && { alignSelf: 'stretch' }, style]}>
+    <Animated.View style={[{ transform: [{ scale }], opacity: disabled && dimDisabled ? 0.45 : 1 }, full && { alignSelf: 'stretch' }, style]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
@@ -153,7 +157,7 @@ export function Btn({
           styles.btn,
           small && styles.btnSmall,
           { backgroundColor: palette.bg, borderColor: palette.border },
-          variant !== 'ghost' && shadow,
+          variant !== 'ghost' && variant !== 'muted' && shadow,
         ]}
       >
         {icon ? <Icon name={icon} size={small ? 16 : 18} color={palette.fg} /> : null}
@@ -310,12 +314,14 @@ export function CountdownBtn({
   style?: StyleProp<ViewStyle>;
 }) {
   const left = useCountdown(active, seconds);
+  const ready = left <= 0;
   return (
     <Btn
-      label={left > 0 ? `${label} (${left})` : label}
+      label={ready ? label : `${label} (${left})`}
       onPress={onPress}
-      disabled={left > 0}
-      variant={variant}
+      disabled={!ready}
+      dimDisabled={false}
+      variant={ready ? variant : 'muted'}
       icon={icon}
       full={full}
       style={style}
@@ -323,7 +329,7 @@ export function CountdownBtn({
   );
 }
 
-export const CLOSE_DELAY_SECONDS = 5;
+export const CLOSE_DELAY_SECONDS = 3;
 
 export function DelayedConfirm({
   visible,

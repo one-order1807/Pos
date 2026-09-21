@@ -1,6 +1,6 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": { "types": ["node"], "noEmit": true },
-  "include": ["./**/*.ts", "../src/domain/**/*.ts", "../src/util/xlsx.ts", "../src/printing/escpos.ts", "../src/printing/layout.ts", "../src/printing/templates.ts"],
+  "include": ["./**/*.ts", "../src/domain/**/*.ts", "../src/util/xlsx.ts", "../src/printing/*.ts", "../src/types/**/*.ts"],
   "exclude": []
 }

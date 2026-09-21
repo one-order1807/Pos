@@ -12,7 +12,7 @@ import { usePrinter } from '../printing/actions';
 import { reconnectSaved } from '../printing/printer';
 import { useStore, type TabKey } from '../store/store';
 import { useSyncStatus } from '../sync/engine';
-import { Dot, Icon, ToastHost, Wordmark, type IconName } from './components';
+import { Dot, FadeIn, Icon, ToastHost, Wordmark, type IconName } from './components';
 import { UsersScreen } from '../screens/UsersScreen';
 import { colors, fonts } from './theme';
 
@@ -58,16 +58,12 @@ export function Shell() {
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.topBar}>
         <View style={styles.lockup}>
-          <View style={styles.lockupRow}>
-            <Text style={styles.agency}>Cloud Build</Text>
-            <Text style={styles.times}>×</Text>
-            <Wordmark size={26} />
-          </View>
-          {cafeName && cafeName.trim().toUpperCase() !== 'ONEORDER' ? (
-            <Text style={styles.cafeCaption} numberOfLines={1}>
-              ONEORDER × {cafeName.trim()}
-            </Text>
-          ) : null}
+          <Text style={styles.cafeName} numberOfLines={1}>
+            {cafeName?.trim() || 'ONEORDER'}
+          </Text>
+          <FadeIn delay={200}>
+            <Wordmark size={14} color={colors.textSoft} />
+          </FadeIn>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={styles.navRow}>
           {items.map((n) => {
@@ -162,11 +158,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  lockup: { justifyContent: 'center', maxWidth: 260 },
-  lockupRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  agency: { fontFamily: fonts.semibold, fontSize: 12, color: colors.textSoft },
-  times: { fontFamily: fonts.medium, fontSize: 14, color: colors.mid },
-  cafeCaption: { fontFamily: fonts.medium, fontSize: 11, color: colors.textSoft, marginTop: -2 },
+  lockup: { justifyContent: 'center', maxWidth: 220 },
+  cafeName: { fontFamily: fonts.heading, fontSize: 22, color: colors.primary, lineHeight: 24 },
   navRow: { alignItems: 'center', paddingHorizontal: 4, gap: 6 },
   navItem: {
     flexDirection: 'row',

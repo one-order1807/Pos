@@ -194,7 +194,6 @@ export function OrderPanel({ sessionId }: { sessionId: string | null }) {
         <Row a="TOTAL" b={formatMoney(totals.total)} big />
       </View>
 
-      {session.rounds > 0 ? <Text style={styles.holdHint}>Hold Cook Bill for 5 seconds to reprint a round</Text> : null}
       <View style={styles.actions}>
         <Btn
           label={unsent.length ? `Cook Bill (${unsent.reduce((n, l) => n + l.qty, 0)})` : 'Cook Bill'}
@@ -267,5 +266,4 @@ const styles = StyleSheet.create({
   totalLabel: { fontFamily: fonts.medium, fontSize: 14, color: colors.text },
   totalBig: { fontFamily: fonts.heading, fontSize: 26 },
   actions: { flexDirection: 'row', gap: 10, padding: 14, paddingTop: 8 },
-  holdHint: { fontFamily: fonts.body, fontSize: 11, color: colors.textSoft, textAlign: 'center', marginTop: 6 },
 });

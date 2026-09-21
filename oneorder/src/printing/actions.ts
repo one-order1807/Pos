@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from 'react';
 import { consolidateLines, consolidateTicketItems, sessionTotals } from '../domain/bill';
+import { occasionLine } from '../domain/occasion';
 import { sessionLabel } from '../domain/ops';
 import type { OrderType, PaymentMethod, Session, State } from '../domain/types';
 import { useStore } from '../store/store';
-import { layoutCookBill, layoutCustomerBill, sampleBillData, sampleCookData, type BillData, type PrintLine } from './layout';
+import { layoutCookBill, layoutCustomerBill, sampleBillData, sampleCookData, type BillData, type PrintBlock } from './layout';
 import { getPrinterSnapshot, printLines, subscribePrinter, type PrinterSnapshot } from './printer';
 import { templateById } from './templates';
 
@@ -26,6 +27,7 @@ export function buildBillData(state: State, s: Session, when: number): BillData 
     bill: settings.bill,
     gst: { ...settings.gst, enabled: totals.gstEnabled },
     label: sessionLabel(state, s),
+    tableLabel: s.type === 'dine-in' && s.tableId ? state.tables[s.tableId]?.label : undefined,
     orderNo: s.orderNo,
     typeLabel: TYPE_LABEL[s.type],
     lines: consolidateLines(s.lines),
@@ -36,15 +38,16 @@ export function buildBillData(state: State, s: Session, when: number): BillData 
     when,
     paymentLabel: s.paymentMethod ? PAY_LABEL[s.paymentMethod] : undefined,
     customer: s.customerName || undefined,
+    occasionLine: occasionLine(s.customerPhone ? state.customers[s.customerPhone] : undefined, s.customerName, settings.bill.showOccasionGreeting),
   };
 }
 
-export function customerBillLines(state: State, s: Session, when: number): PrintLine[] {
+export function customerBillLines(state: State, s: Session, when: number): PrintBlock[] {
   const t = templateById(state.settings.main.printer.templateId);
   return layoutCustomerBill(t, buildBillData(state, s, when));
 }
 
-export function cookBillLines(state: State, ticketId: string): PrintLine[] | null {
+export function cookBillLines(state: State, ticketId: string): PrintBlock[] | null {
   const ticket = state.tickets[ticketId];
   const s = ticket ? state.sessions[ticket.sessionId] : undefined;
   if (!ticket || !s) return null;
@@ -65,7 +68,7 @@ export interface PrintOutcome {
   error?: string;
 }
 
-async function run(lines: PrintLine[] | null): Promise<PrintOutcome> {
+async function run(lines: PrintBlock[] | null): Promise<PrintOutcome> {
   if (!lines) return { ok: false, error: 'Nothing to print.' };
   try {
     await printLines(lines);
@@ -81,7 +84,7 @@ export async function printCookTicket(ticketId: string): Promise<PrintOutcome> {
   return r;
 }
 
-export function cookRoundLines(state: State, sessionId: string, round: number | null): PrintLine[] | null {
+export function cookRoundLines(state: State, sessionId: string, round: number | null): PrintBlock[] | null {
   const s = state.sessions[sessionId];
   if (!s) return null;
   const lines = s.lines.filter((l) => l.round !== null && (round === null || l.round === round));
@@ -111,7 +114,7 @@ export async function printCustomerBill(sessionId: string): Promise<PrintOutcome
   return r;
 }
 
-export function testLines(state: State, templateId: string, kind: 'customer' | 'cook'): PrintLine[] {
+export function testLines(state: State, templateId: string, kind: 'customer' | 'cook'): PrintBlock[] {
   const st = state.settings.main;
   const t = templateById(templateId);
   return kind === 'customer'

@@ -8,7 +8,7 @@ import * as ops from '../src/domain/ops';
 import { seedState } from '../src/domain/seed';
 import type { State } from '../src/domain/types';
 import { filterUsers, usersToRows } from '../src/domain/users';
-import { layoutCookBill, sampleBillData, layoutCustomerBill } from '../src/printing/layout';
+import { layoutCookBill, sampleBillData, layoutCustomerBill, textOnly } from '../src/printing/layout';
 import { TEMPLATES } from '../src/printing/templates';
 import { buildXlsx } from '../src/util/xlsx';
 
@@ -157,27 +157,28 @@ test('cook bill: round-specific vs whole-bill layouts; sample bill amount is Rs 
   const ses = s.sessions[o.sessionId];
   const bill = s.settings.main.bill;
   const t = TEMPLATES[0];
-  const round2 = layoutCookBill(t, {
+  const round2 = textOnly(layoutCookBill(t, {
     bill, label: 'Takeaway #1', orderNo: 1, typeLabel: 'Takeaway', round: 2, when: T0,
     items: consolidateTicketItems(ses.lines.filter((l) => l.round === 2)),
-  }).map((l) => l.text).join('\n');
+  })).map((l) => l.text).join('\n');
   assert.ok(round2.includes('Round 2'));
   assert.ok(round2.includes('2 x Masala Dosa') && !round2.includes('3 x'), 'only that round');
-  const whole = layoutCookBill(t, {
+  const whole = textOnly(layoutCookBill(t, {
     bill, label: 'Takeaway #1', orderNo: 1, typeLabel: 'Takeaway', round: null, when: T0,
     items: consolidateTicketItems(ses.lines.filter((l) => l.round !== null)),
-  }).map((l) => l.text).join('\n');
+  })).map((l) => l.text).join('\n');
   assert.ok(whole.includes('ALL ROUNDS'));
   assert.ok(whole.includes('5 x Masala Dosa'), '3 + 2 combined into one line');
   assert.ok(whole.includes('5 x Masala Chai'));
 
   const off = sampleBillData(bill, { enabled: false, percent: '5', number: '' }, T0);
-  assert.equal(off.total, 100);
+  assert.equal(off.subtotal, 765);
+  assert.equal(off.total, 765);
   const on = sampleBillData(bill, { enabled: true, percent: '5', number: 'G' }, T0);
-  assert.equal(on.total, 105);
+  assert.equal(on.total, 803.25);
   for (const tpl of TEMPLATES) {
-    const text = layoutCustomerBill(tpl, off).map((l) => l.text).join('\n');
-    assert.ok(text.includes(formatMoney(100)), `${tpl.id} shows Rs 100`);
+    const text = textOnly(layoutCustomerBill(tpl, off)).map((l) => l.text).join('\n');
+    assert.ok(text.includes(formatMoney(765)), `${tpl.id} shows the sample total`);
     assert.ok(!text.includes('390'));
   }
 });

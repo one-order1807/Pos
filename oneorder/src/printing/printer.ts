@@ -1,6 +1,6 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import { encodeEscPos, toBase64 } from './escpos';
-import type { PrintLine } from './layout';
+import type { PrintBlock } from './layout';
 
 export type PrinterStatus =
   | 'unsupported'
@@ -264,7 +264,7 @@ export async function reconnectSaved(id: string, name: string): Promise<void> {
 
 export class PrintError extends Error {}
 
-export async function printLines(lines: PrintLine[]): Promise<void> {
+export async function printLines(lines: PrintBlock[]): Promise<void> {
   if (!getManager()) throw new PrintError('Bluetooth printing is not available in this build.');
   if (!(await verifyConnection()) || !writeChar) throw new PrintError('Printer is not connected.');
   const data = encodeEscPos(lines);

@@ -61,6 +61,7 @@ interface StoreShape {
   deleteCustomer: (id: string) => void;
 
   setTableMode: (on: boolean) => void;
+  setBubbleEnabled: (on: boolean) => void;
   setGst: (patch: Partial<GstSettings>) => void;
   setBill: (patch: Partial<BillSettings>) => void;
   setPrinterSettings: (patch: Partial<PrinterSettings>) => void;
@@ -298,6 +299,9 @@ export const useStore = create<StoreShape>((set, get) => {
     setTableMode(on) {
       withSettings((s) => ({ ...s, tableMode: on }));
       if (get().tab === 'tables' && !on) set({ tab: 'order' });
+    },
+    setBubbleEnabled(on) {
+      withSettings((s) => ({ ...s, bubbleEnabled: on }));
     },
     setGst(patch) {
       withSettings((s) => ({ ...s, gst: { ...s.gst, ...patch } }));

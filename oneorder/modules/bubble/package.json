@@ -1,0 +1,8 @@
+{
+  "name": "oneorder-bubble",
+  "version": "1.0.0",
+  "description": "Local Expo module: Android floating chat-head bubble for ONEORDER.",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true
+}

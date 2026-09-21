@@ -101,12 +101,22 @@ export interface GstSettings {
   number: string;
 }
 
+export interface RasterAsset {
+  width: number;
+  height: number;
+  bitsB64: string; // packed 1bpp, MSB-first, row-major, 1 = black
+}
+
 export interface BillSettings {
   name: string;
   logoUri: string;
+  logoRaster: RasterAsset | null; // dithered print/preview bitmap, derived from logoUri
   address: string;
   phone: string;
   footer: string;
+  qrText: string; // e.g. a Google Review link; '' = no QR printed
+  qrRaster: RasterAsset | null; // derived from qrText
+  showOccasionGreeting: boolean;
 }
 
 export interface PrinterSettings {
@@ -126,6 +136,7 @@ export interface Settings {
   orderCounter: { date: string; n: number };
   priorityCounter: number;
   layoutPrev: TableDef[];
+  bubbleEnabled: boolean;
 }
 
 export interface State {

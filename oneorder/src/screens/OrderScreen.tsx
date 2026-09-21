@@ -249,9 +249,7 @@ export function OrderScreen() {
 
       <Modal visible={newMenu} onClose={() => setNewMenu(false)} title="New Order" width={440}>
         <Text style={styles.newHint}>How is this order being served?</Text>
-        {settings.tableMode ? (
-          <Btn label="Dine-in" icon="coffee" full onPress={() => startOrder('dine-in')} style={{ marginBottom: 10 }} />
-        ) : null}
+        <Btn label="Dine-in" icon="coffee" full onPress={() => startOrder('dine-in')} style={{ marginBottom: 10 }} />
         <Btn label="Takeaway" icon="shopping-bag" full onPress={() => startOrder('takeaway')} style={{ marginBottom: 10 }} />
         <Btn label="Delivery" icon="truck" full onPress={() => startOrder('delivery')} style={{ marginBottom: 10 }} />
         {settings.tableMode ? (
