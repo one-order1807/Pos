@@ -177,7 +177,10 @@ jobs:
           SHORT=$(echo "${GITHUB_SHA}" | cut -c1-7)
           NAME="ONEORDER-${SHORT}.apk"
           cp android/app/build/outputs/apk/release/app-release.apk "${NAME}"
-          ls -lh "${NAME}"
+          # A second copy under a fixed name, so releases/latest/download/ONEORDER.apk always
+          # resolves to the newest build without the download link changing every time.
+          cp android/app/build/outputs/apk/release/app-release.apk ONEORDER.apk
+          ls -lh "${NAME}" ONEORDER.apk
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
@@ -187,9 +190,18 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Publishes a real GitHub Release with the raw .apk attached (not a zip, no login needed
+      # since the repo is public) on every push to the default branch, plus on version tags.
+      - name: Publish release
+        if: |
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: softprops/action-gh-release@v2
         with:
-          files: oneorder/${{ steps.apk.outputs.name }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('Build {0}', github.run_number) }}
+          make_latest: true
           generate_release_notes: true
+          files: |
+            oneorder/${{ steps.apk.outputs.name }}
+            oneorder/ONEORDER.apk
