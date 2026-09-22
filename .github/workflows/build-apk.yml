@@ -72,6 +72,15 @@ jobs:
 
       - run: npm ci
 
+      - name: Bump the Android versionCode for this build
+        shell: bash
+        run: |
+          set -e
+          tmp=$(mktemp)
+          jq --argjson vc "$GITHUB_RUN_NUMBER" '.expo.android.versionCode = $vc' app.json > "$tmp"
+          mv "$tmp" app.json
+          echo "app_version=$(jq -r '.expo.version' app.json)" >> "$GITHUB_ENV"
+
       - name: Generate the native Android project
         shell: bash
         run: npx expo prebuild --platform android --no-install 2>&1 | tee prebuild.log
@@ -195,15 +204,18 @@ jobs:
           retention-days: 30
 
       # Publishes a real GitHub Release with the raw .apk attached (not a zip, no login needed
-      # since the repo is public) on every push to the default branch, plus on version tags.
+      # while the repo is public) on every push to the default branch, plus on version tags. The
+      # tag embeds both the app's semantic version (app.json) and the CI run number, so every
+      # build gets its own distinct, always-incrementing tag/versionCode - releases/latest always
+      # resolves to the newest one automatically.
       - name: Publish release
         if: |
           github.event_name == 'push' &&
           (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build-{0}', github.run_number) }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('Build {0}', github.run_number) }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}-{1}', env.app_version, github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ONEORDER v{0} (build {1})', env.app_version, github.run_number) }}
           make_latest: true
           generate_release_notes: true
           files: |
