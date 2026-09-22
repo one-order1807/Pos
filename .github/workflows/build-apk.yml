@@ -147,7 +147,11 @@ jobs:
           for f in prebuild.log android/build.log; do
             if [ ! -f "$f" ]; then echo "::warning::$f does not exist"; continue; fi
             clean=$(sed "s/${esc}\[[0-9;]*m//g" "$f" | grep -vE '^[[:space:]]*$' | grep -vE '^[[:space:]]+- |^[[:space:]]+at (org|java|jdk|kotlin)' | cut -c1-220)
-            echo "$f cleaned lines: $(printf '%s\n' "$clean" | wc -l)"
+            total_lines=$(printf '%s\n' "$clean" | wc -l)
+            echo "$f cleaned lines: $total_lines"
+            # The real error is always near the end (Gradle prints "FAILURE:" last), so report the
+            # tail, not the head - the head is just successful task names once the build gets far.
+            clean=$(printf '%s\n' "$clean" | tail -n 420)
             i=0
             while [ $i -lt 6 ]; do
               chunk=$(printf '%s\n' "$clean" | sed -n "$((i * 70 + 1)),$((i * 70 + 70))p")
