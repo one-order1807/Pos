@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AppState, Image, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { hasOverlayPermission, isBubbleSupported, requestOverlayPermission } from '../../modules/bubble';
+import { Image, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import appJson from '../../app.json';
 import { parseBackup, buildBackup, buildMenuExport, previewBackup, type BackupFile, type BackupPreview } from '../domain/backup';
 import { computeTotals } from '../domain/bill';
 import { formatMoney, formatPercent, parseGstPercent } from '../domain/money';
@@ -54,13 +54,15 @@ export function DevModeScreen() {
   return (
     <ScrollView style={styles.root} contentContainerStyle={{ padding: 12, paddingBottom: 48, maxWidth: 900, width: '100%', alignSelf: 'center' }}>
       <View style={styles.head}>
-        <Text style={styles.title}>Dev Mode</Text>
+        <View>
+          <Text style={styles.title}>Dev Mode</Text>
+          <Text style={styles.version}>ONEORDER v{appJson.expo.version}</Text>
+        </View>
         <Btn small label="Lock" icon="lock" variant="secondary" onPress={lock} />
       </View>
       <BillSetup />
       <GstSetup />
       <TableModeSetup />
-      <BubbleSetup />
       <Card style={styles.section}>
         <SectionTitle>Printer setup</SectionTitle>
         <PrinterPanel />
@@ -93,12 +95,22 @@ function BillSetup() {
       const uri = await pickLogo();
       if (!uri) return;
       const logoRaster = await rasterizeLogo(uri);
+      // Commits straight to the store (like the QR code does) instead of only updating local
+      // form state - so the bill template preview picks up the new logo immediately, with no
+      // separate "Save bill setup" step required first.
       edit({ logoUri: uri, logoRaster });
+      setBill({ logoUri: uri, logoRaster });
+      toast('Logo updated.', 'success');
     } catch (e: any) {
       toast(`Logo not saved: ${e?.message ?? e} Use a PNG file.`, 'error', 5000);
     } finally {
       setBusy(false);
     }
+  }
+
+  function removeLogo() {
+    edit({ logoUri: '', logoRaster: null });
+    setBill({ logoUri: '', logoRaster: null });
   }
 
   function saveQr() {
@@ -129,7 +141,7 @@ function BillSetup() {
           <Text style={styles.hint}>PNG only. This prints at the top of every bill, shown here exactly as it will print.</Text>
         </View>
         <Btn small label={form.logoRaster ? 'Change' : 'Choose'} icon="upload" variant="secondary" onPress={chooseLogo} disabled={busy} />
-        {form.logoRaster ? <Btn small icon="trash-2" variant="secondary" onPress={() => edit({ logoUri: '', logoRaster: null })} disabled={busy} /> : null}
+        {form.logoRaster ? <Btn small icon="trash-2" variant="secondary" onPress={removeLogo} disabled={busy} /> : null}
       </View>
       <Btn
         label="Save bill setup"
@@ -287,66 +299,6 @@ function TableModeSetup() {
   );
 }
 
-function BubbleSetup() {
-  const enabled = useStore((s) => s.data.settings.main.bubbleEnabled);
-  const setBubbleEnabled = useStore((s) => s.setBubbleEnabled);
-  const supported = isBubbleSupported();
-  const [awaitingPermission, setAwaitingPermission] = useState(false);
-
-  useEffect(() => {
-    if (!awaitingPermission) return undefined;
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state !== 'active') return;
-      setAwaitingPermission(false);
-      if (hasOverlayPermission()) {
-        setBubbleEnabled(true);
-        toast('Floating bubble ON.', 'success');
-      } else {
-        toast('Permission not granted — the floating bubble stays off.', 'error');
-      }
-    });
-    return () => sub.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [awaitingPermission]);
-
-  function onToggle(v: boolean) {
-    if (!v) {
-      setBubbleEnabled(false);
-      toast('Floating bubble OFF.', 'success');
-      return;
-    }
-    if (hasOverlayPermission()) {
-      setBubbleEnabled(true);
-      toast('Floating bubble ON.', 'success');
-      return;
-    }
-    setAwaitingPermission(true);
-    requestOverlayPermission();
-  }
-
-  return (
-    <Card style={styles.section}>
-      <View style={styles.switchRow}>
-        <View style={{ flex: 1 }}>
-          <SectionTitle>Floating bubble</SectionTitle>
-          <Text style={styles.hint}>
-            {supported
-              ? 'When the app is minimized, show a small floating bubble to reopen it. Needs the "Display over other apps" permission.'
-              : 'Needs a real Android build (not Expo Go) on Android 8 or newer.'}
-          </Text>
-        </View>
-        <Switch
-          value={enabled}
-          onValueChange={onToggle}
-          disabled={!supported || awaitingPermission}
-          trackColor={{ true: colors.primary }}
-          accessibilityLabel="Floating bubble toggle"
-        />
-      </View>
-    </Card>
-  );
-}
-
 function DataTools() {
   const data = useStore((s) => s.data);
   const importMenuText = useStore((s) => s.importMenuText);
@@ -453,8 +405,12 @@ function DataTools() {
         onCancel={() => setConfirm(false)}
         onConfirm={() => {
           if (pending) {
-            restoreBackup(pending.backup);
-            toast('Backup restored.', 'success');
+            try {
+              restoreBackup(pending.backup);
+              toast('Backup restored.', 'success');
+            } catch (e: any) {
+              toast(`Restore failed: ${e?.message ?? e} The current data was kept.`, 'error', 6000);
+            }
           }
           setConfirm(false);
           setPending(null);
@@ -484,6 +440,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   title: { fontFamily: fonts.heading, fontSize: 34, color: colors.text },
+  version: { fontFamily: fonts.body, fontSize: 12, color: colors.textSoft, marginTop: -4 },
   section: { marginBottom: 12 },
   locked: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, backgroundColor: colors.bg },
   lockedTitle: { fontFamily: fonts.heading, fontSize: 30, color: colors.text },

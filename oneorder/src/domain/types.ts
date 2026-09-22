@@ -136,7 +136,6 @@ export interface Settings {
   orderCounter: { date: string; n: number };
   priorityCounter: number;
   layoutPrev: TableDef[];
-  bubbleEnabled: boolean;
 }
 
 export interface State {

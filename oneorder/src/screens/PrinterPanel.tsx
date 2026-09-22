@@ -123,6 +123,7 @@ export function TemplatePicker() {
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [kind, setKind] = useState<'customer' | 'cook'>('customer');
   const [busy, setBusy] = useState(false);
+  const [scrollSignal, setScrollSignal] = useState(0);
   const preview = previewId ? templateById(previewId) : null;
 
   async function printThis() {
@@ -130,6 +131,7 @@ export function TemplatePicker() {
     setBusy(true);
     const r = await printTest(previewId, kind);
     setBusy(false);
+    setScrollSignal(Date.now());
     if (r.ok) toast('Test receipt sent to the printer.', 'success');
     else toast(`Test print failed: ${r.error}`, 'error', 5000);
   }
@@ -155,7 +157,7 @@ export function TemplatePicker() {
               <Chip label="Customer Bill" active={kind === 'customer'} onPress={() => setKind('customer')} />
               <Chip label="Cook Bill" active={kind === 'cook'} onPress={() => setKind('cook')} />
             </View>
-            <Receipt lines={testLines(data, preview.id, kind)} columns={preview.columns} maxHeight={380} />
+            <Receipt lines={testLines(data, preview.id, kind)} columns={preview.columns} maxHeight={380} autoScrollSignal={scrollSignal} />
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
               <Btn
                 label={preview.id === current ? 'Default template' : 'Use as default'}

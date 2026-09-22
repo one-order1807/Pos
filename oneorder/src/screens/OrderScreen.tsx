@@ -189,7 +189,7 @@ export function OrderScreen() {
               const inOrder = qtyInOrder.get(item.id) ?? 0;
               return (
                 <View style={{ width: cardWidth, marginBottom: 10 }}>
-                  <View style={styles.itemCard}>
+                  <View style={[styles.itemCard, { flex: 1 }]}>
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Customize ${item.name}`}
@@ -331,7 +331,12 @@ const styles = StyleSheet.create({
   },
   itemBody: { flex: 1, padding: 12, minHeight: 92, justifyContent: 'space-between' },
   itemCode: { fontFamily: fonts.medium, fontSize: 11, color: colors.textSoft },
-  itemName: { fontFamily: fonts.semibold, fontSize: 15, color: colors.text, marginVertical: 2 },
+  // Fixed to exactly 2 lines' worth of height (15 * 1.2 line-height * 2) so a one-line name and a
+  // two-line name leave the price at the same vertical position - without this, cards in the same
+  // FlatList row stretch to the tallest sibling (React Native's row default) but the card border
+  // itself doesn't grow to fill that space, so shorter cards looked "cut off" above their taller
+  // row-mates instead of bottom-aligning with them.
+  itemName: { fontFamily: fonts.semibold, fontSize: 15, lineHeight: 18, height: 36, color: colors.text, marginVertical: 2 },
   itemPrice: { fontFamily: fonts.bold, fontSize: 14, color: colors.primary },
   quickAdd: { width: 52, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   badge: { fontFamily: fonts.bold, color: '#fff', fontSize: 18 },

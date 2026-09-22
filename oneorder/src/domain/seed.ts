@@ -26,7 +26,6 @@ export function defaultSettings(): Settings {
     orderCounter: { date: '', n: 0 },
     priorityCounter: 0,
     layoutPrev: [],
-    bubbleEnabled: false,
   };
 }
 

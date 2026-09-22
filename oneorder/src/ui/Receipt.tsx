@@ -7,7 +7,7 @@ import { colors, fonts } from './theme';
 const MONO = Platform.select({ android: 'monospace', ios: 'Menlo', default: 'monospace' });
 const FONT = 12;
 const CHAR_W = FONT * 0.6;
-const AUTO_SCROLL_DELAY_MS = 2200;
+const AUTO_SCROLL_DELAY_MS = 2000;
 
 export function Receipt({
   lines,
@@ -32,7 +32,13 @@ export function Receipt({
   }, [autoScrollSignal]);
 
   return (
-    <ScrollView ref={scrollRef} style={[styles.scroll, maxHeight ? { maxHeight } : null]} nestedScrollEnabled>
+    <ScrollView
+      ref={scrollRef}
+      style={[styles.scroll, maxHeight ? { maxHeight } : null]}
+      nestedScrollEnabled
+      showsVerticalScrollIndicator
+      persistentScrollbar
+    >
       <View style={[styles.paper, { width }]}>
         {lines.map((b, i) => {
           if (isPrintImage(b)) {

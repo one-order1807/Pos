@@ -18,7 +18,35 @@ export interface BackupFile {
 
 export function stripSecrets(s: Settings) {
   const { pinHash: _h, pinSalt: _s, orderCounter: _o, priorityCounter: _p, ...rest } = s;
-  return rest;
+  // logoUri is a file:// path into this device's own local storage - meaningless (and
+  // potentially crash-inducing if something ever tried to read it) once restored onto a
+  // different device or after a reinstall. The logo image itself already travels as
+  // self-contained base64 data in bill.logoRaster, so the path isn't needed at all.
+  return { ...rest, bill: { ...rest.bill, logoUri: '' } };
+}
+
+function isValidRasterAsset(v: unknown): v is Settings['bill']['logoRaster'] {
+  if (v === null) return true;
+  if (typeof v !== 'object') return false;
+  const r = v as Record<string, unknown>;
+  return typeof r.width === 'number' && typeof r.height === 'number' && typeof r.bitsB64 === 'string';
+}
+
+/** Defensively repairs a restored bill-settings object so one bad/missing field can never crash the app. */
+function sanitizeBillSettings(incoming: unknown, fallback: Settings['bill']): Settings['bill'] {
+  if (!incoming || typeof incoming !== 'object') return fallback;
+  const b = incoming as Record<string, unknown>;
+  return {
+    name: typeof b.name === 'string' ? b.name : fallback.name,
+    logoUri: '',
+    logoRaster: isValidRasterAsset(b.logoRaster) ? b.logoRaster : null,
+    address: typeof b.address === 'string' ? b.address : fallback.address,
+    phone: typeof b.phone === 'string' ? b.phone : fallback.phone,
+    footer: typeof b.footer === 'string' ? b.footer : fallback.footer,
+    qrText: typeof b.qrText === 'string' ? b.qrText : fallback.qrText,
+    qrRaster: isValidRasterAsset(b.qrRaster) ? b.qrRaster : null,
+    showOccasionGreeting: typeof b.showOccasionGreeting === 'boolean' ? b.showOccasionGreeting : fallback.showOccasionGreeting,
+  };
 }
 
 export function buildBackup(state: State, now: number): BackupFile {
@@ -92,9 +120,18 @@ function byId<T extends { id: string }>(arr: T[]): Record<string, T> {
 
 export function applyBackup(current: State, backup: BackupFile): State {
   const cur = current.settings.main;
-  const incoming = backup.data.settings;
+  const incoming = backup.data.settings as Partial<Settings> | null;
   const settings: Settings = incoming
-    ? { ...cur, ...incoming, id: 'main', pinHash: cur.pinHash, pinSalt: cur.pinSalt, orderCounter: cur.orderCounter, priorityCounter: cur.priorityCounter }
+    ? {
+        ...cur,
+        ...incoming,
+        id: 'main',
+        pinHash: cur.pinHash,
+        pinSalt: cur.pinSalt,
+        orderCounter: cur.orderCounter,
+        priorityCounter: cur.priorityCounter,
+        bill: sanitizeBillSettings(incoming.bill, cur.bill),
+      }
     : cur;
   const sessions = byId(backup.data.sessions);
   const keptTickets: State['tickets'] = {};

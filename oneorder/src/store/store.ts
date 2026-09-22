@@ -61,7 +61,6 @@ interface StoreShape {
   deleteCustomer: (id: string) => void;
 
   setTableMode: (on: boolean) => void;
-  setBubbleEnabled: (on: boolean) => void;
   setGst: (patch: Partial<GstSettings>) => void;
   setBill: (patch: Partial<BillSettings>) => void;
   setPrinterSettings: (patch: Partial<PrinterSettings>) => void;
@@ -300,9 +299,6 @@ export const useStore = create<StoreShape>((set, get) => {
       withSettings((s) => ({ ...s, tableMode: on }));
       if (get().tab === 'tables' && !on) set({ tab: 'order' });
     },
-    setBubbleEnabled(on) {
-      withSettings((s) => ({ ...s, bubbleEnabled: on }));
-    },
     setGst(patch) {
       withSettings((s) => ({ ...s, gst: { ...s.gst, ...patch } }));
     },
@@ -371,7 +367,15 @@ export const useStore = create<StoreShape>((set, get) => {
     },
 
     restoreBackup(b) {
-      commit((d) => applyBackup(d, b));
+      // A restored field that's the wrong shape (a corrupt/foreign backup file, a future app
+      // version's settings, etc.) must never take the whole app down to a white screen - fail
+      // the restore and keep whatever was running before.
+      try {
+        commit((d) => applyBackup(d, b));
+      } catch (e: any) {
+        useStore.setState({ saveError: `Restore failed: ${String(e?.message ?? e)}` });
+        throw e;
+      }
       const open = ops.openSessions(get().data);
       set({ activeSessionId: open.length ? open[0].id : null });
     },
