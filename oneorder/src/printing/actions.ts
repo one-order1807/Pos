@@ -114,6 +114,28 @@ export async function printCustomerBill(sessionId: string): Promise<PrintOutcome
   return r;
 }
 
+/**
+ * Deliberately not a bill: no items, totals, GST or template layout - this exists only so staff
+ * can confirm the printer is actually connected and printing before service starts, without
+ * pulling in any real order data or looking like an actual Cook/Customer Bill.
+ */
+export function connectivityTestLines(): PrintBlock[] {
+  return [
+    { text: 'ONEORDER', bold: true, size: 2, align: 'center' },
+    { text: 'Printer connection test', align: 'center' },
+    { text: '--------------------------------', align: 'center' },
+    { text: new Date().toLocaleString(), align: 'center' },
+    { text: 'If you can read this, the printer', align: 'center' },
+    { text: 'is connected and working.', align: 'center' },
+    { text: ' ' },
+    { text: ' ' },
+  ];
+}
+
+export async function printConnectivityTest(): Promise<PrintOutcome> {
+  return run(connectivityTestLines());
+}
+
 export function testLines(state: State, templateId: string, kind: 'customer' | 'cook'): PrintBlock[] {
   const st = state.settings.main;
   const t = templateById(templateId);

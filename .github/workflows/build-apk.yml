@@ -221,3 +221,51 @@ jobs:
           files: |
             oneorder/${{ steps.apk.outputs.name }}
             oneorder/ONEORDER.apk
+
+      # The in-app "check for update" (src/update/check.ts) reads a tiny public JSON manifest from
+      # a SEPARATE, empty public repo - one-order1807/oneorder-updates - so it keeps working with a
+      # plain unauthenticated request even once this source repo goes private, and so each client
+      # branch can later publish its own channels/<name>.json without exposing anyone else's. This
+      # step needs a UPDATES_REPO_TOKEN repository secret (a fine-grained PAT scoped to just that
+      # one public repo, Contents: Read and write) - it's a no-op with a warning until that secret
+      # is added, so the main build/release never depends on it.
+      - name: Publish the update-check manifest
+        if: |
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+        env:
+          UPDATES_REPO_TOKEN: ${{ secrets.UPDATES_REPO_TOKEN }}
+          UPDATES_REPO: one-order1807/oneorder-updates
+          CHANNEL: default
+        shell: bash
+        run: |
+          set -e
+          if [ -z "${UPDATES_REPO_TOKEN}" ]; then
+            echo "::notice::Skipped publishing the update-check manifest - add an UPDATES_REPO_TOKEN repository secret to enable in-app update checks."
+            exit 0
+          fi
+          TAG="v${app_version}-${GITHUB_RUN_NUMBER}"
+          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/ONEORDER.apk"
+          MANIFEST=$(jq -n \
+            --argjson versionCode "$GITHUB_RUN_NUMBER" \
+            --arg version "$app_version" \
+            --arg tag "$TAG" \
+            --arg apkUrl "$APK_URL" \
+            --arg publishedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{versionCode: $versionCode, version: $version, tag: $tag, apkUrl: $apkUrl, publishedAt: $publishedAt}')
+          CONTENT_B64=$(printf '%s' "$MANIFEST" | base64 -w0)
+          API="https://api.github.com/repos/${UPDATES_REPO}/contents/channels/${CHANNEL}.json"
+          SHA=$(curl -s -H "Authorization: token ${UPDATES_REPO_TOKEN}" "$API" | jq -r '.sha // empty')
+          if [ -n "$SHA" ]; then
+            PAYLOAD=$(jq -n --arg msg "Publish ${TAG}" --arg content "$CONTENT_B64" --arg sha "$SHA" '{message: $msg, content: $content, sha: $sha}')
+          else
+            PAYLOAD=$(jq -n --arg msg "Publish ${TAG}" --arg content "$CONTENT_B64" '{message: $msg, content: $content}')
+          fi
+          CODE=$(curl -s -o /tmp/manifest-publish.json -w '%{http_code}' -X PUT \
+            -H "Authorization: token ${UPDATES_REPO_TOKEN}" -H "Content-Type: application/json" \
+            -d "$PAYLOAD" "$API")
+          echo "manifest publish HTTP ${CODE}"
+          if [ "$CODE" -ge 300 ]; then
+            echo "::warning::Failed to publish the update manifest (HTTP ${CODE}) - the app's in-app update check will just not see this build. See ${UPDATES_REPO}."
+            cat /tmp/manifest-publish.json
+          fi

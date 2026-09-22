@@ -149,6 +149,32 @@ export function applyBackup(current: State, backup: BackupFile): State {
   };
 }
 
+/**
+ * Combines an old backup into the current data instead of replacing it: every collection is a
+ * union by id, and an id that already exists in the current data is always left exactly as it is
+ * - the backup only ever fills in ids that are missing. Settings, tickets and the active session
+ * are untouched entirely (the backup format doesn't carry tickets, and merging settings has no
+ * safe default - only Replace touches those). Safe to run repeatedly on the same file: anything
+ * already merged in stays put and is never re-overwritten.
+ */
+export function mergeBackup(current: State, backup: BackupFile): State {
+  const fillGaps = <T extends { id: string }>(cur: Record<string, T>, incoming: T[]): Record<string, T> => {
+    const next = { ...cur };
+    for (const item of incoming) {
+      if (!next[item.id]) next[item.id] = item;
+    }
+    return next;
+  };
+  return {
+    ...current,
+    categories: fillGaps(current.categories, backup.data.categories),
+    items: fillGaps(current.items, backup.data.items),
+    tables: fillGaps(current.tables, backup.data.tables),
+    sessions: fillGaps(current.sessions, backup.data.sessions),
+    customers: fillGaps(current.customers, backup.data.customers),
+  };
+}
+
 // ---------- menu import/export (additive only) ----------
 
 export interface MenuExport {

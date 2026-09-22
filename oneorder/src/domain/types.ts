@@ -128,6 +128,10 @@ export interface PrinterSettings {
 export interface Settings {
   id: 'main';
   tableMode: boolean;
+  /** When on, the Order tab shows a single "Print Bill" button that sends+prints the Cook Bill
+   * automatically and then opens the Customer Bill popup, instead of two separate buttons - for
+   * counter-service cafes where the customer orders and pays in one step. */
+  combinedBillPrint: boolean;
   gst: GstSettings;
   bill: BillSettings;
   printer: PrinterSettings;

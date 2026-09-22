@@ -7,6 +7,7 @@ import { customerBillLines, PAY_LABEL, printCustomerBill } from '../printing/act
 import { templateById } from '../printing/templates';
 import { useStore } from '../store/store';
 import { Btn, Chip, CountdownBtn, CLOSE_DELAY_SECONDS, Field, Modal, toast } from '../ui/components';
+import { AutoScrollView } from '../ui/AutoScrollView';
 import { Receipt } from '../ui/Receipt';
 import { colors, fonts } from '../ui/theme';
 
@@ -28,6 +29,9 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
       setPhone(session.customerPhone);
       setMethod('cash');
       setCloseOpen(false);
+      // Triggers AutoScrollView's delayed scroll-to-bottom the moment the popup opens, so a long
+      // bill's last items are reachable without the person having to find the scroll themselves.
+      setScrollSignal(Date.now());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
@@ -95,7 +99,9 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
       <Modal visible onClose={onClose} title="Customer Bill" width={720}>
         <View style={styles.body}>
           <View style={styles.left}>
-            <Receipt lines={lines} columns={template.columns} maxHeight={420} autoScrollSignal={scrollSignal} />
+            <AutoScrollView autoScrollSignal={scrollSignal} style={styles.receiptScroll}>
+              <Receipt lines={lines} columns={template.columns} />
+            </AutoScrollView>
           </View>
           <View style={styles.right}>
             <Field label="Customer name (optional)" value={name} onChangeText={setName} placeholder="Name" />
@@ -149,6 +155,7 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
 const styles = StyleSheet.create({
   body: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   left: { flexGrow: 1, flexBasis: 300, alignItems: 'center' },
+  receiptScroll: { alignSelf: 'stretch', maxHeight: 420 },
   right: { flexGrow: 1, flexBasis: 260 },
   label: { fontFamily: fonts.medium, fontSize: 13, color: colors.textSoft, marginBottom: 8 },
   methods: { flexDirection: 'row', marginBottom: 12 },

@@ -3,6 +3,7 @@ import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View, use
 import { formatDuration, formatMoney } from '../domain/money';
 import { openSessions, sessionLabel } from '../domain/ops';
 import type { MenuItem, OrderType, Session } from '../domain/types';
+import { printConnectivityTest } from '../printing/actions';
 import { useStore } from '../store/store';
 import { Btn, Chip, DelayedConfirm, Dot, EmptyState, Icon, Modal, toast, useNow } from '../ui/components';
 import { colors, fonts, shadow } from '../ui/theme';
@@ -32,6 +33,16 @@ export function OrderScreen() {
   const [tablePick, setTablePick] = useState(false);
   const [closing, setClosing] = useState<Session | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [testingPrinter, setTestingPrinter] = useState(false);
+
+  async function testPrinter() {
+    if (testingPrinter) return;
+    setTestingPrinter(true);
+    const r = await printConnectivityTest();
+    setTestingPrinter(false);
+    if (r.ok) toast('Test print sent - check the printer.', 'success');
+    else toast(`Printer test failed: ${r.error}`, 'error', 5000);
+  }
 
   const settings = data.settings.main;
   const sessions = openSessions(data);
@@ -98,8 +109,8 @@ export function OrderScreen() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.tabBar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center', paddingRight: 8 }}>
+      <View style={[styles.tabBar, { flexDirection: 'row', alignItems: 'center' }]}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center', paddingRight: 8 }} style={{ flex: 1 }}>
           {sessions.map((s) => {
             const isActive = s.id === activeId;
             const label = sessionLabel(data, s);
@@ -133,6 +144,15 @@ export function OrderScreen() {
             <Text style={styles.plusText}>New Order</Text>
           </Pressable>
         </ScrollView>
+        <Btn
+          small
+          label="Test Print"
+          icon="printer"
+          variant="secondary"
+          onPress={testPrinter}
+          disabled={testingPrinter}
+          style={{ marginHorizontal: 12 }}
+        />
       </View>
 
       <View style={styles.body}>

@@ -8,6 +8,7 @@ export function defaultSettings(): Settings {
   return {
     id: 'main',
     tableMode: true,
+    combinedBillPrint: false,
     gst: { enabled: false, percent: '5', number: '' },
     bill: {
       name: 'ONEORDER Cafe',

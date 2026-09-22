@@ -6,6 +6,7 @@ import {
   Easing,
   Modal as RNModal,
   Pressable,
+  ScrollView,
   StyleProp,
   StyleSheet,
   Text,
@@ -233,7 +234,16 @@ export function Modal({
             maxHeight: dim.height - 48,
           }}
         >
-          <Pressable style={styles.modalCard} onPress={() => {}}>
+          {/*
+            modalCard previously had no fixed height and no overflow clipping, so content taller
+            than the outer maxHeight above just rendered past the card's edge with no way to reach
+            it - RN doesn't clip or enable scrolling from a maxHeight cap alone unless something in
+            the chain also sets overflow:hidden and gives the ScrollView an explicit bound. Both are
+            set here so any modal's body - a long form, a long bill preview, buttons at the very
+            bottom - stays reachable on any screen size, on top of whatever scroll behavior the
+            content itself adds (e.g. AutoScrollView for a bill preview).
+          */}
+          <Pressable style={[styles.modalCard, { maxHeight: dim.height - 48, overflow: 'hidden' }]} onPress={() => {}}>
             {title ? (
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>{title}</Text>
@@ -242,7 +252,9 @@ export function Modal({
                 </Pressable>
               </View>
             ) : null}
-            {children}
+            <ScrollView style={{ maxHeight: dim.height - 48 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+              {children}
+            </ScrollView>
           </Pressable>
         </Animated.View>
       </Pressable>

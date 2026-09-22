@@ -14,16 +14,16 @@ import { BubbleController } from './src/ui/BubbleController';
 import { ErrorBoundary } from './src/ui/ErrorBoundary';
 import { Shell } from './src/ui/Shell';
 import { Splash } from './src/ui/Splash';
-import { UpdateWatcher } from './src/ui/UpdateBanner';
+import { UpdateAvailableBanner, UpdateWatcher } from './src/ui/UpdateBanner';
 import { colors, fonts } from './src/ui/theme';
 
 let splashShown = false;
 
 // RN's default long-press-cancels-on-drift is 10px, tuned for the ~500ms long presses most apps
-// use. The Cook Bill reprint gesture asks for a full 5s hold (see OrderPanel's delayLongPress),
-// and no human hand holds a fingertip on glass within 10px for 5 whole seconds - the natural
-// drift silently cancelled the long press before it could fire, so onLongPress never ran and the
-// touch just completed as a normal tap on release. A generous deactivation distance fixes this
+// use. The Cook Bill reprint gesture asks for a multi-second hold (see OrderPanel's
+// delayLongPress), and no human hand holds a fingertip on glass within 10px that long - the
+// natural drift silently cancelled the long press before it could fire, so onLongPress never ran
+// and the touch just completed as a normal tap on release. A generous deactivation distance fixes this
 // app-wide (it's a single global setting inside Pressability, not per-component). Deep import
 // because Pressability's static setter isn't re-exported from the top-level 'react-native' index.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -90,6 +90,7 @@ export default function App() {
         <StatusBar style="dark" />
         <Shell />
         <UpdateWatcher />
+        <UpdateAvailableBanner />
         <BubbleController />
       </SafeAreaProvider>
     </ErrorBoundary>

@@ -5,6 +5,7 @@ import { connectTo, disconnectPrinter, startScan, stopScan, verifyConnection } f
 import { templateById, TEMPLATES } from '../printing/templates';
 import { useStore } from '../store/store';
 import { Btn, Card, Chip, Dot, Modal, toast } from '../ui/components';
+import { AutoScrollView } from '../ui/AutoScrollView';
 import { Receipt } from '../ui/Receipt';
 import { colors, fonts } from '../ui/theme';
 
@@ -147,7 +148,16 @@ export function TemplatePicker() {
             <Text style={styles.devSub}>{t.description}</Text>
           </View>
           {t.id === current ? <Text style={styles.connectedTag}>Default</Text> : null}
-          <Btn small label="Preview" icon="eye" variant="secondary" onPress={() => setPreviewId(t.id)} />
+          <Btn
+            small
+            label="Preview"
+            icon="eye"
+            variant="secondary"
+            onPress={() => {
+              setPreviewId(t.id);
+              setScrollSignal(Date.now());
+            }}
+          />
         </Card>
       ))}
       <Modal visible={!!preview} onClose={() => setPreviewId(null)} title={preview?.name ?? ''} width={620}>
@@ -157,7 +167,9 @@ export function TemplatePicker() {
               <Chip label="Customer Bill" active={kind === 'customer'} onPress={() => setKind('customer')} />
               <Chip label="Cook Bill" active={kind === 'cook'} onPress={() => setKind('cook')} />
             </View>
-            <Receipt lines={testLines(data, preview.id, kind)} columns={preview.columns} maxHeight={380} autoScrollSignal={scrollSignal} />
+            <AutoScrollView autoScrollSignal={scrollSignal} style={styles.receiptScroll}>
+              <Receipt lines={testLines(data, preview.id, kind)} columns={preview.columns} />
+            </AutoScrollView>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
               <Btn
                 label={preview.id === current ? 'Default template' : 'Use as default'}
@@ -180,6 +192,7 @@ export function TemplatePicker() {
 }
 
 const styles = StyleSheet.create({
+  receiptScroll: { alignSelf: 'stretch', maxHeight: 380 },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   statusLabel: { fontFamily: fonts.semibold, fontSize: 18, color: colors.text },
   device: { fontFamily: fonts.body, fontSize: 13, color: colors.textSoft },

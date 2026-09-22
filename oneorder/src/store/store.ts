@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { loadState, writeChanges } from '../db/sqlite';
-import { applyBackup, importMenu, parseBackup, type BackupFile, type MenuImportResult } from '../domain/backup';
+import { applyBackup, importMenu, mergeBackup, parseBackup, type BackupFile, type MenuImportResult } from '../domain/backup';
 import { allDocs, diffStates, type DocChange } from '../domain/diff';
 import { makeTapGuard } from '../domain/guard';
 import * as ops from '../domain/ops';
@@ -61,6 +61,7 @@ interface StoreShape {
   deleteCustomer: (id: string) => void;
 
   setTableMode: (on: boolean) => void;
+  setCombinedBillPrint: (on: boolean) => void;
   setGst: (patch: Partial<GstSettings>) => void;
   setBill: (patch: Partial<BillSettings>) => void;
   setPrinterSettings: (patch: Partial<PrinterSettings>) => void;
@@ -75,6 +76,7 @@ interface StoreShape {
 
   importMenuText: (text: string) => MenuImportResult;
   restoreBackup: (b: BackupFile) => void;
+  mergeBackupIn: (b: BackupFile) => void;
 }
 
 const pending = new Map<string, DocChange>();
@@ -299,6 +301,9 @@ export const useStore = create<StoreShape>((set, get) => {
       withSettings((s) => ({ ...s, tableMode: on }));
       if (get().tab === 'tables' && !on) set({ tab: 'order' });
     },
+    setCombinedBillPrint(on) {
+      withSettings((s) => ({ ...s, combinedBillPrint: on }));
+    },
     setGst(patch) {
       withSettings((s) => ({ ...s, gst: { ...s.gst, ...patch } }));
     },
@@ -378,6 +383,15 @@ export const useStore = create<StoreShape>((set, get) => {
       }
       const open = ops.openSessions(get().data);
       set({ activeSessionId: open.length ? open[0].id : null });
+    },
+
+    mergeBackupIn(b) {
+      try {
+        commit((d) => mergeBackup(d, b));
+      } catch (e: any) {
+        useStore.setState({ saveError: `Merge failed: ${String(e?.message ?? e)}` });
+        throw e;
+      }
     },
 
   };

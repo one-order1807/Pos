@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Image, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { AppState, Image, Linking, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import appJson from '../../app.json';
 import { parseBackup, buildBackup, buildMenuExport, previewBackup, type BackupFile, type BackupPreview } from '../domain/backup';
 import { computeTotals } from '../domain/bill';
@@ -9,6 +9,8 @@ import { syncNow, useSyncStatus } from '../sync/engine';
 import { rasterizeLogo, rasterizeQr } from '../printing/assets';
 import { rasterAssetToBmpDataUri } from '../printing/raster';
 import { pickLogo, pickTextFile, shareJson } from '../util/files';
+import { hasOverlayPermission, isBubbleSupported, requestOverlayPermission } from '../../modules/bubble';
+import { runUpdateCheck, useUpdateState } from '../update/state';
 import { Btn, Card, Confirm, Field, Icon, Modal, SectionTitle, toast } from '../ui/components';
 import { PinGate } from '../ui/PinGate';
 import { colors, fonts } from '../ui/theme';
@@ -60,9 +62,12 @@ export function DevModeScreen() {
         </View>
         <Btn small label="Lock" icon="lock" variant="secondary" onPress={lock} />
       </View>
+      <UpdateSetup />
       <BillSetup />
       <GstSetup />
       <TableModeSetup />
+      <CombinedBillSetup />
+      <BubbleStatus />
       <Card style={styles.section}>
         <SectionTitle>Printer setup</SectionTitle>
         <PrinterPanel />
@@ -72,6 +77,70 @@ export function DevModeScreen() {
       <DataTools />
       <CloudSync />
     </ScrollView>
+  );
+}
+
+function UpdateSetup() {
+  const st = useUpdateState();
+  return (
+    <Card style={styles.section}>
+      <SectionTitle>Updates</SectionTitle>
+      {st.error ? (
+        <Text style={styles.hint}>{st.error}</Text>
+      ) : st.available && st.manifest ? (
+        <Text style={styles.hint}>Version {st.manifest.version} is available.</Text>
+      ) : st.lastCheckedAt ? (
+        <Text style={styles.hint}>You're on the latest version.</Text>
+      ) : (
+        <Text style={styles.hint}>Not checked yet this session.</Text>
+      )}
+      <View style={styles.btnRow}>
+        <Btn
+          small
+          label={st.checking ? 'Checking...' : 'Check for update'}
+          icon="refresh-cw"
+          variant="secondary"
+          disabled={st.checking}
+          onPress={() => runUpdateCheck()}
+        />
+        {st.available && st.manifest ? (
+          <Btn small label="Update now" icon="download" onPress={() => Linking.openURL(st.manifest!.apkUrl)} />
+        ) : null}
+      </View>
+    </Card>
+  );
+}
+
+function BubbleStatus() {
+  const [, force] = useState(0);
+
+  useEffect(() => {
+    // Granting the permission means leaving the app for the system Settings screen and coming
+    // back - re-check the moment that happens so this card reflects the real state immediately.
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') force((n) => n + 1);
+    });
+    return () => sub.remove();
+  }, []);
+
+  if (!isBubbleSupported()) return null;
+  const granted = hasOverlayPermission();
+  return (
+    <Card style={styles.section}>
+      <SectionTitle>Floating bubble</SectionTitle>
+      <Text style={styles.hint}>
+        Always shows automatically when the app is minimized - there's no on/off setting for it. It needs Android's
+        "Display over other apps" permission, which only Android itself can present (there's no in-app dialog for
+        this one specific permission - that's an Android platform rule, not something this app controls). ONEORDER
+        asks for it automatically the first time you minimize the app if it isn't granted yet, or you can grant it
+        right now below.
+      </Text>
+      {granted ? (
+        <Text style={styles.hint}>Permission granted.</Text>
+      ) : (
+        <Btn small label="Grant permission" icon="external-link" variant="secondary" onPress={requestOverlayPermission} />
+      )}
+    </Card>
   );
 }
 
@@ -299,10 +368,39 @@ function TableModeSetup() {
   );
 }
 
+function CombinedBillSetup() {
+  const combined = useStore((s) => s.data.settings.main.combinedBillPrint);
+  const setCombinedBillPrint = useStore((s) => s.setCombinedBillPrint);
+  return (
+    <Card style={styles.section}>
+      <View style={styles.switchRow}>
+        <View style={{ flex: 1 }}>
+          <SectionTitle>Combined Cook + Customer Bill</SectionTitle>
+          <Text style={styles.hint}>
+            For counter-service: the Order tab shows one "Print Bill" button instead of two. It sends and prints the
+            Cook Bill automatically, then opens the Customer Bill popup right after - first Cook Bill, then Customer
+            Bill, one after another. Nothing about either bill's layout changes.
+          </Text>
+        </View>
+        <Switch
+          value={combined}
+          onValueChange={(v) => {
+            setCombinedBillPrint(v);
+            toast(v ? 'Combined bill printing ON.' : 'Combined bill printing OFF.', 'success');
+          }}
+          trackColor={{ true: colors.primary }}
+          accessibilityLabel="Combined bill toggle"
+        />
+      </View>
+    </Card>
+  );
+}
+
 function DataTools() {
   const data = useStore((s) => s.data);
   const importMenuText = useStore((s) => s.importMenuText);
   const restoreBackup = useStore((s) => s.restoreBackup);
+  const mergeBackupIn = useStore((s) => s.mergeBackupIn);
   const [pending, setPending] = useState<{ backup: BackupFile; preview: BackupPreview } | null>(null);
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -350,7 +448,10 @@ function DataTools() {
 
       <SectionTitle>Full backup / restore</SectionTitle>
       <Text style={styles.hint}>
-        One JSON file with the menu, tables, customers, full sales history and bill setup. The PIN is never included. Restoring shows a preview first and replaces the current data.
+        One JSON file with the menu, tables, customers, full sales history and bill setup. The PIN is never included.
+        Restoring shows a preview first, then asks whether to Replace (swap in the backup's data entirely) or Merge
+        (add anything from the backup that isn't already here, without touching or deleting what's already in the
+        system).
       </Text>
       <View style={styles.btnRow}>
         <Btn small label="Export full backup" icon="download" disabled={busy} onPress={() => guard(() => shareJson(`oneorder-backup-${new Date().toISOString().slice(0, 10)}.json`, buildBackup(data, Date.now())))} />
@@ -387,11 +488,30 @@ function DataTools() {
             <PreviewRow a="Users (customer directory)" b={String(pending.preview.customers)} />
             <PreviewRow a="Bill setup / GST / printer settings" b={pending.preview.hasSettings ? 'Included' : 'Not included'} />
             {pending.preview.openSessionsLost > 0 ? (
-              <Text style={styles.err}>{pending.preview.openSessionsLost} currently open order(s) will be replaced.</Text>
+              <Text style={styles.err}>{pending.preview.openSessionsLost} currently open order(s) will be replaced if you choose Replace.</Text>
             ) : null}
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+            <Text style={styles.hint}>
+              Merge only adds items, tables, orders and users that aren't already here - nothing existing is ever
+              changed or removed. Replace swaps everything in the backup for what's currently here.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
               <Btn label="Cancel" variant="secondary" style={{ flex: 1 }} onPress={() => setPending(null)} />
-              <Btn label="Restore" icon="rotate-ccw" style={{ flex: 1 }} onPress={() => setConfirm(true)} />
+              <Btn
+                label="Merge"
+                icon="git-merge"
+                variant="secondary"
+                style={{ flex: 1 }}
+                onPress={() => {
+                  try {
+                    mergeBackupIn(pending.backup);
+                    toast('Backup merged in.', 'success');
+                  } catch (e: any) {
+                    toast(`Merge failed: ${e?.message ?? e} The current data was kept.`, 'error', 6000);
+                  }
+                  setPending(null);
+                }}
+              />
+              <Btn label="Replace" icon="rotate-ccw" style={{ flex: 1 }} onPress={() => setConfirm(true)} />
             </View>
           </View>
         ) : null}

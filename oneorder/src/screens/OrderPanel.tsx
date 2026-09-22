@@ -85,6 +85,27 @@ export function OrderPanel({ sessionId }: { sessionId: string | null }) {
     setShowBill(true);
   }
 
+  // Combined-bill mode (Dev Mode toggle): one tap sends+prints the Cook Bill (if there's anything
+  // new to send) and then opens the same Customer Bill popup as usual - the two bills stay exactly
+  // as they were, just triggered together instead of by two separate buttons.
+  async function onPrintBill() {
+    if (busy) return;
+    if (session!.lines.length === 0) {
+      toast('Add items before generating the bill.');
+      return;
+    }
+    setBusy(true);
+    try {
+      if (unsent.length > 0) {
+        const ok = await doSend();
+        if (!ok) return;
+      }
+      setShowBill(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function pickTable(tableId: string) {
     const mode = picker;
     setPicker(null);
@@ -195,16 +216,30 @@ export function OrderPanel({ sessionId }: { sessionId: string | null }) {
       </View>
 
       <View style={styles.actions}>
-        <Btn
-          label={unsent.length ? `Cook Bill (${unsent.reduce((n, l) => n + l.qty, 0)})` : 'Cook Bill'}
-          icon="send"
-          onPress={onCook}
-          onLongPress={() => setRoundsOpen(true)}
-          delayLongPress={5000}
-          disabled={busy}
-          style={{ flex: 1 }}
-        />
-        <Btn label="Customer Bill" icon="file-text" variant="secondary" onPress={onCustomerBill} disabled={busy} style={{ flex: 1 }} />
+        {settings.combinedBillPrint ? (
+          <Btn
+            label="Print Bill"
+            icon="printer"
+            onPress={onPrintBill}
+            onLongPress={() => setRoundsOpen(true)}
+            delayLongPress={3000}
+            disabled={busy}
+            style={{ flex: 1 }}
+          />
+        ) : (
+          <>
+            <Btn
+              label={unsent.length ? `Cook Bill (${unsent.reduce((n, l) => n + l.qty, 0)})` : 'Cook Bill'}
+              icon="send"
+              onPress={onCook}
+              onLongPress={() => setRoundsOpen(true)}
+              delayLongPress={3000}
+              disabled={busy}
+              style={{ flex: 1 }}
+            />
+            <Btn label="Customer Bill" icon="file-text" variant="secondary" onPress={onCustomerBill} disabled={busy} style={{ flex: 1 }} />
+          </>
+        )}
       </View>
 
       {roundsOpen ? <RoundsModal sessionId={session.id} onClose={() => setRoundsOpen(false)} /> : null}

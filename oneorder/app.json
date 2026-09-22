@@ -53,13 +53,21 @@
         }
       ],
       "expo-updates",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#1D4ED8"
+        }
+      ],
       "./plugins/withInlineModulesFix"
     ],
     "backgroundColor": "#FFFFFF",
     "extra": {
       "eas": {
         "projectId": "c1b2a459-af83-455d-9458-93b75cf4e227"
-      }
+      },
+      "updateChannel": "default"
     },
     "owner": "one-orders-team",
     "runtimeVersion": {
