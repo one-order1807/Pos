@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import appJson from '../../app.json';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { DevModeScreen } from '../screens/DevModeScreen';
 import { KitchenScreen } from '../screens/KitchenScreen';
@@ -13,6 +14,7 @@ import { reconnectSaved } from '../printing/printer';
 import { useStore, type TabKey } from '../store/store';
 import { useSyncStatus } from '../sync/engine';
 import { Dot, FadeIn, Icon, ToastHost, Wordmark, type IconName } from './components';
+import { LogoMark } from './Logo';
 import { UsersScreen } from '../screens/UsersScreen';
 import { colors, fonts } from './theme';
 
@@ -57,12 +59,16 @@ export function Shell() {
   return (
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.topBar}>
+        <LogoMark size={34} />
         <View style={styles.lockup}>
           <Text style={styles.cafeName} numberOfLines={1}>
             {cafeName?.trim() || 'ONEORDER'}
           </Text>
           <FadeIn delay={200}>
-            <Wordmark size={14} color={colors.textSoft} />
+            <View style={styles.wordmarkRow}>
+              <Wordmark size={14} color={colors.textSoft} />
+              <Text style={styles.version}>v{appJson.expo.version}</Text>
+            </View>
           </FadeIn>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={styles.navRow}>
@@ -160,6 +166,8 @@ const styles = StyleSheet.create({
   },
   lockup: { justifyContent: 'center', maxWidth: 220 },
   cafeName: { fontFamily: fonts.heading, fontSize: 22, color: colors.primary, lineHeight: 24 },
+  wordmarkRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  version: { fontFamily: fonts.body, fontSize: 10, color: colors.textSoft },
   navRow: { alignItems: 'center', paddingHorizontal: 4, gap: 6 },
   navItem: {
     flexDirection: 'row',

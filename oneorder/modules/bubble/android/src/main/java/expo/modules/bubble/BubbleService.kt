@@ -11,6 +11,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.os.Build
 import android.os.IBinder
@@ -127,7 +128,7 @@ class BubbleService : Service() {
     dismissSizePx = (64 * density).toInt()
     val margin = (10 * density).toInt()
 
-    val bubble = BubbleDotView(this, bubbleSizePx, "O", 0xFF1D4ED8.toInt())
+    val bubble = BubbleDotView(this, bubbleSizePx, "1", 0xFF0F1B33.toInt(), brandRing = true)
     val params = WindowManager.LayoutParams(
       bubbleSizePx,
       bubbleSizePx,
@@ -295,16 +296,30 @@ class BubbleService : Service() {
   }
 }
 
-// A plain circular dot with a single centered glyph - draws itself with Canvas so the module
-// needs no bitmap/drawable assets of its own.
-private class BubbleDotView(context: Context, private val sizePx: Int, private val glyph: String, color: Int) :
-  View(context) {
+// A circular dot with a single centered glyph - draws itself with Canvas so the module needs no
+// bitmap/drawable assets of its own. The main bubble (brandRing = true) additionally draws the
+// same navy-disc + blue-accent-arc treatment as the app's O1 mark (see src/ui/Logo.tsx and the
+// generated assets/icon.png) so the minimized bubble reads as the same brand, just tiny - the
+// dismiss-zone "X" target stays a plain flat circle, it's a control, not a brand mark.
+private class BubbleDotView(
+  context: Context,
+  private val sizePx: Int,
+  private val glyph: String,
+  color: Int,
+  private val brandRing: Boolean = false,
+) : View(context) {
   private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
   private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = 0xFFDC2626.toInt() }
+  private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    this.color = 0xFF1D4ED8.toInt()
+    style = Paint.Style.STROKE
+    strokeWidth = sizePx * 0.1f
+    strokeCap = Paint.Cap.ROUND
+  }
   private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     this.color = Color.WHITE
     textAlign = Paint.Align.CENTER
-    textSize = sizePx * 0.42f
+    textSize = sizePx * 0.46f
     typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
   }
   private var highlighted = false
@@ -319,6 +334,11 @@ private class BubbleDotView(context: Context, private val sizePx: Int, private v
     super.onDraw(canvas)
     val r = min(width, height) / 2f
     canvas.drawCircle(width / 2f, height / 2f, r, if (highlighted) highlightPaint else bgPaint)
+    if (brandRing && !highlighted) {
+      val inset = r * 0.16f
+      val rect = RectF(inset, inset, width - inset, height - inset)
+      canvas.drawArc(rect, -110f, 140f, false, ringPaint)
+    }
     val fm = textPaint.fontMetrics
     val y = height / 2f - (fm.ascent + fm.descent) / 2f
     canvas.drawText(glyph, width / 2f, y, textPaint)
