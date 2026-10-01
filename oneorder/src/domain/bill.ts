@@ -1,5 +1,5 @@
 import { parseGstPercent, round2 } from './money';
-import type { FinalTotals, GstSettings, OrderLine, Session, TicketItem } from './types';
+import type { FinalTotals, GstLineAmount, GstSettings, OrderLine, Session, TicketItem } from './types';
 
 export interface BillLine {
   key: string;
@@ -36,20 +36,34 @@ export function consolidateLines(lines: OrderLine[]): BillLine[] {
 
 export function computeTotals(lines: OrderLine[], gst: GstSettings): BillTotals {
   const subtotal = round2(lines.reduce((s, l) => s + l.qty * l.unitPrice, 0));
-  const pct = gst.enabled ? parseGstPercent(gst.percent) : 0;
-  const gstAmount = gst.enabled ? round2((subtotal * pct) / 100) : 0;
+  const gstLines: GstLineAmount[] = gst.enabled
+    ? gst.lines
+        .map((l) => ({ type: l.type.trim() || 'GST', percent: parseGstPercent(l.percent) }))
+        .filter((l) => l.percent > 0)
+        .map((l) => ({ ...l, amount: round2((subtotal * l.percent) / 100) }))
+    : [];
+  const gstAmount = round2(gstLines.reduce((s, l) => s + l.amount, 0));
+  const gstPercent = round2(gstLines.reduce((s, l) => s + l.percent, 0));
   return {
     subtotal,
-    gstPercent: pct,
+    gstPercent,
     gstAmount,
+    gstLines,
     total: round2(subtotal + gstAmount),
     gstEnabled: gst.enabled,
   };
 }
 
+/** Pre-Round-5 paid orders have no `gstLines` (only the old aggregate gstPercent/gstAmount) -
+ * rebuild a single-line display for them so every call site can treat gstLines as always present. */
+function legacyGstLines(gstPercent: number, gstAmount: number): GstLineAmount[] {
+  return gstAmount > 0 || gstPercent > 0 ? [{ type: 'GST', percent: gstPercent, amount: gstAmount }] : [];
+}
+
 export function sessionTotals(session: Session, gst: GstSettings): BillTotals {
   if (session.final) {
-    return { ...session.final, gstEnabled: session.final.gstPercent > 0 || session.final.gstAmount > 0 };
+    const gstLines = session.final.gstLines ?? legacyGstLines(session.final.gstPercent, session.final.gstAmount);
+    return { ...session.final, gstLines, gstEnabled: session.final.gstPercent > 0 || session.final.gstAmount > 0 };
   }
   return computeTotals(session.lines, gst);
 }

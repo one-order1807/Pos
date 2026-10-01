@@ -9,7 +9,7 @@ export function defaultSettings(): Settings {
     id: 'main',
     tableMode: true,
     combinedBillPrint: false,
-    gst: { enabled: false, percent: '5', number: '' },
+    gst: { enabled: false, lines: [{ type: 'GST', percent: '5' }], number: '' },
     bill: {
       name: 'ONEORDER Cafe',
       logoUri: '',
@@ -20,6 +20,7 @@ export function defaultSettings(): Settings {
       qrText: '',
       qrRaster: null,
       showOccasionGreeting: false,
+      fssaiNumber: '',
     },
     printer: { templateId: 't2', deviceId: '', deviceName: '' },
     pinHash: hashPin(DEFAULT_DEV_PIN, salt),

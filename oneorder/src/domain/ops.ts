@@ -302,7 +302,7 @@ export function sendCookBill(state: State, sessionId: string, now: number): Cook
   const fresh = unsentLines(s);
   if (fresh.length === 0) return { state, error: 'nothing-to-send' };
   const st = settingsOf(state);
-  if (st.tableMode && s.type === 'dine-in' && !s.tableId) return { state, error: 'needs-table' };
+  if (st.tableMode && !st.combinedBillPrint && s.type === 'dine-in' && !s.tableId) return { state, error: 'needs-table' };
 
   const round = s.rounds + 1;
   const lines = s.lines.map((l) => (l.round === null ? { ...l, round } : l));
@@ -390,7 +390,7 @@ export function payAndClose(
   sessionId: string,
   method: PaymentMethod,
   now: number,
-  customer?: { name: string; phone: string },
+  customer?: { name: string; phone: string; event?: Customer['event'] },
 ): PayResult {
   const s = state.sessions[sessionId];
   if (!s || s.status !== 'open') return { state, error: 'not-open' };
@@ -411,6 +411,7 @@ export function payAndClose(
       subtotal: totals.subtotal,
       gstPercent: totals.gstPercent,
       gstAmount: totals.gstAmount,
+      gstLines: totals.gstLines,
       total: totals.total,
     },
   };
@@ -425,7 +426,9 @@ export function payAndClose(
           id: phone,
           phone,
           name: name || existing?.name || '',
-          event: existing?.event ?? '',
+          // An explicitly chosen occasion for this bill wins; otherwise keep whatever was already
+          // on file rather than blanking it out just because this bill's form left it untouched.
+          event: customer?.event || existing?.event || '',
           createdAt: existing?.createdAt ?? now,
         },
       },

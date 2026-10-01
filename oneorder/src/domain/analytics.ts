@@ -2,7 +2,11 @@ import { consolidateLines } from './bill';
 import { dayKey, round2 } from './money';
 import type { OrderType, PaymentMethod, Session, State } from './types';
 
-export type RangeKey = 'today' | '7d' | '30d' | 'all';
+export type RangeKey = 'today' | '7d' | '30d' | 'all' | 'custom';
+export interface CustomRange {
+  start: number;
+  end: number;
+}
 export type Tier = 'Gold' | 'Silver' | 'Regular';
 
 export const TIER_RULES = {
@@ -30,6 +34,12 @@ export function rangeStart(range: RangeKey, now: number): number {
   return 0;
 }
 
+/** Start/end bounds for a range - 'custom' uses the given CustomRange (falls back to 'all' without one). */
+export function rangeBounds(range: RangeKey, now: number, custom?: CustomRange): { start: number; end: number } {
+  if (range === 'custom') return custom ?? { start: 0, end: now };
+  return { start: rangeStart(range, now), end: now };
+}
+
 export interface Dashboard {
   sales: number;
   orders: number;
@@ -47,9 +57,9 @@ export interface Dashboard {
   };
 }
 
-export function buildDashboard(state: State, range: RangeKey, now: number): Dashboard {
-  const start = rangeStart(range, now);
-  const inRange = paidSessions(state).filter((s) => (s.paidAt as number) >= start);
+export function buildDashboard(state: State, range: RangeKey, now: number, custom?: CustomRange): Dashboard {
+  const { start, end } = rangeBounds(range, now, custom);
+  const inRange = paidSessions(state).filter((s) => (s.paidAt as number) >= start && (s.paidAt as number) <= end);
 
   const typeSplit: Dashboard['typeSplit'] = {
     'dine-in': { orders: 0, sales: 0 },
@@ -173,6 +183,30 @@ export function recentOrders(state: State, now: number, onlyToday = false): Orde
       typeLabel: TYPE_TEXT[s.type],
       paymentMethod: s.paymentMethod,
       customer: s.customerName || s.customerPhone,
+    }));
+}
+
+export interface CustomerVisit {
+  id: string;
+  orderNo: number;
+  label: string;
+  paidAt: number;
+  total: number;
+  occasion: string;
+}
+
+/** Full visit history for one customer (by id, i.e. phone), newest first - all-time, not range-limited. */
+export function customerHistory(state: State, customerId: string): CustomerVisit[] {
+  return paidSessions(state)
+    .filter((s) => s.customerPhone === customerId)
+    .sort((a, b) => (b.paidAt as number) - (a.paidAt as number))
+    .map((s) => ({
+      id: s.id,
+      orderNo: s.orderNo,
+      label: s.tableId ? state.tables[s.tableId]?.label ?? TYPE_TEXT[s.type] : TYPE_TEXT[s.type],
+      paidAt: s.paidAt as number,
+      total: s.final!.total,
+      occasion: state.customers[customerId]?.event ?? '',
     }));
 }
 

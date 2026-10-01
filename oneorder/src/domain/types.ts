@@ -61,6 +61,7 @@ export interface FinalTotals {
   subtotal: number;
   gstPercent: number;
   gstAmount: number;
+  gstLines: GstLineAmount[];
   total: number;
 }
 
@@ -95,10 +96,21 @@ export interface Customer {
   createdAt: number;
 }
 
+export interface GstLine {
+  type: string; // free text, e.g. "SGST", "CGST"
+  percent: string;
+}
+
 export interface GstSettings {
   enabled: boolean;
-  percent: string;
+  lines: GstLine[];
   number: string;
+}
+
+export interface GstLineAmount {
+  type: string;
+  percent: number;
+  amount: number;
 }
 
 export interface RasterAsset {
@@ -117,6 +129,7 @@ export interface BillSettings {
   qrText: string; // e.g. a Google Review link; '' = no QR printed
   qrRaster: RasterAsset | null; // derived from qrText
   showOccasionGreeting: boolean;
+  fssaiNumber: string; // '' = not printed; presence of a value is the only switch
 }
 
 export interface PrinterSettings {

@@ -1,6 +1,6 @@
-import type { BillLine } from '../domain/bill';
+import { computeTotals, type BillLine } from '../domain/bill';
 import { formatMoney, formatPercent } from '../domain/money';
-import type { BillSettings, GstSettings, TicketItem } from '../domain/types';
+import type { BillSettings, GstLineAmount, GstSettings, OrderLine, TicketItem } from '../domain/types';
 import type { PrintTemplate } from './templates';
 import { rasterAssetToPrintImage } from './raster';
 
@@ -11,7 +11,7 @@ export interface PrintLine {
   bold?: boolean;
   size?: 1 | 2;
   tall?: boolean;
-  brand?: boolean; // the fixed "ONE ORDER x Cloud Build" line - Receipt.tsx styles this with the wordmark font
+  brand?: boolean; // the café-name + "ONEORDER" footer line - Receipt.tsx styles this with the wordmark font
 }
 
 export interface PrintImage {
@@ -36,7 +36,6 @@ export function textOnly(blocks: PrintBlock[]): PrintLine[] {
   return blocks.filter(isPrintLine);
 }
 
-const BRAND_FOOTER = 'ONE ORDER x Cloud Build';
 
 export interface BillData {
   bill: BillSettings;
@@ -49,6 +48,7 @@ export interface BillData {
   subtotal: number;
   gstPercent: number;
   gstAmount: number;
+  gstLines: GstLineAmount[];
   total: number;
   when: number;
   paymentLabel?: string;
@@ -155,6 +155,9 @@ function headerBlocks(t: PrintTemplate, bill: BillSettings, gst?: GstSettings): 
   if (gst?.enabled && gst.number.trim()) {
     for (const l of wrapText(`GST: ${gst.number.trim()}`, w)) out.push({ text: l, align: 'center' });
   }
+  if (bill.fssaiNumber.trim()) {
+    for (const l of wrapText(`FSSAI: ${bill.fssaiNumber.trim()}`, w)) out.push({ text: l, align: 'center' });
+  }
   return out;
 }
 
@@ -166,7 +169,9 @@ function footerBlocks(t: PrintTemplate, bill: BillSettings): PrintBlock[] {
   }
   const qr = rasterAssetToPrintImage(bill.qrRaster);
   if (qr) out.push({ ...qr, align: 'center' });
-  out.push({ text: BRAND_FOOTER, align: 'center', bold: true, brand: true });
+  const cafeName = bill.name.trim();
+  const brandFooter = cafeName && cafeName.toUpperCase() !== 'ONEORDER' ? `${cafeName} · ONEORDER` : 'ONEORDER';
+  out.push({ text: brandFooter, align: 'center', bold: true, brand: true });
   return out;
 }
 
@@ -207,34 +212,44 @@ export function layoutCustomerBill(t: PrintTemplate, d: BillData): PrintBlock[] 
       for (const extra of nameLines.slice(1)) out.push({ text: extra });
     }
   } else if (t.style === 'boxed') {
-    const qtyW = 5;
-    const nameW = w - qtyW - amtW;
-    out.push({ text: pad('Qty  Item', nameW + qtyW) + padLeft('Amt', amtW), bold: true });
+    const qtyW = 4;
+    const rateW = 7;
+    const nameW = w - qtyW - rateW - amtW;
+    out.push({ text: pad('Qty  Item', nameW + qtyW) + padLeft('Rate', rateW) + padLeft('Amt', amtW), bold: true });
     out.push(rule(w, '.'));
     for (const l of d.lines) {
       const left = `${padLeft(String(l.qty) + 'x', qtyW - 1)} ${l.name}`;
       const nameLines = wrapText(left, nameW + qtyW - 1);
       nameLines.forEach((ln, i) => {
-        if (i === nameLines.length - 1) out.push({ text: pad(ln, w - amtW) + padLeft(formatMoney(l.amount), amtW), bold: true });
+        if (i === nameLines.length - 1)
+          out.push({
+            text: pad(ln, w - rateW - amtW) + padLeft(formatMoney(l.unitPrice), rateW) + padLeft(formatMoney(l.amount), amtW),
+            bold: true,
+          });
         else out.push({ text: ln, bold: true });
       });
     }
   } else {
-    const qtyW = 4;
-    const nameW = w - qtyW - amtW;
-    out.push({ text: pad('Item', nameW) + padLeft('Qty', qtyW) + padLeft('Amt', amtW), bold: true });
+    const qtyW = 3;
+    const rateW = 7;
+    const nameW = w - qtyW - rateW - amtW;
+    out.push({ text: pad('Item', nameW) + padLeft('Qty', qtyW) + padLeft('Rate', rateW) + padLeft('Amt', amtW), bold: true });
     out.push(rule(w));
     for (const l of d.lines) {
       const nameLines = wrapText(l.name, nameW - 1);
-      out.push({ text: pad(nameLines[0], nameW) + padLeft(String(l.qty), qtyW) + padLeft(formatMoney(l.amount), amtW) });
+      out.push({
+        text: pad(nameLines[0], nameW) + padLeft(String(l.qty), qtyW) + padLeft(formatMoney(l.unitPrice), rateW) + padLeft(formatMoney(l.amount), amtW),
+      });
       for (const extra of nameLines.slice(1)) out.push({ text: extra });
     }
   }
   out.push(rule(w, rc));
 
-  if (d.gst.enabled) {
+  if (d.gstLines.length > 0) {
     for (const l of twoCol('Subtotal', formatMoney(d.subtotal), w)) out.push({ text: l });
-    for (const l of twoCol(`GST (${formatPercent(d.gstPercent)}%)`, formatMoney(d.gstAmount), w)) out.push({ text: l });
+    for (const gl of d.gstLines) {
+      for (const l of twoCol(`${gl.type} (${formatPercent(gl.percent)}%)`, formatMoney(gl.amount), w)) out.push({ text: l });
+    }
     out.push(rule(w, rc));
   }
   for (const l of twoCol('TOTAL', formatMoney(d.total), w)) out.push({ text: l, bold: true, tall: true });
@@ -279,9 +294,17 @@ export function sampleBillData(bill: BillSettings, gst: GstSettings, now: number
     { key: 'b', name: 'Hot Chocolate', qty: 2, unitPrice: 140, amount: 280 },
     { key: 'c', name: 'Green Tea', qty: 1, unitPrice: 35, amount: 35 },
   ];
-  const subtotal = lines.reduce((s, l) => s + l.amount, 0);
-  const pct = gst.enabled ? Number(String(gst.percent).replace('%', '')) || 0 : 0;
-  const gstAmount = Math.round(subtotal * pct) / 100;
+  const orderLines: OrderLine[] = lines.map((l) => ({
+    id: l.key,
+    itemId: l.key,
+    name: l.name,
+    categoryId: '',
+    unitPrice: l.unitPrice,
+    qty: l.qty,
+    note: '',
+    round: null,
+  }));
+  const totals = computeTotals(orderLines, gst);
   return {
     bill,
     gst,
@@ -290,13 +313,14 @@ export function sampleBillData(bill: BillSettings, gst: GstSettings, now: number
     orderNo: 1025,
     typeLabel: 'Dine-in',
     lines,
-    subtotal,
-    gstPercent: pct,
-    gstAmount,
-    total: subtotal + gstAmount,
+    subtotal: totals.subtotal,
+    gstPercent: totals.gstPercent,
+    gstAmount: totals.gstAmount,
+    gstLines: totals.gstLines,
+    total: totals.total,
     when: now,
     paymentLabel: 'UPI',
-    occasionLine: bill.showOccasionGreeting ? 'Happy Birthday, Rahul!' : undefined,
+    occasionLine: bill.showOccasionGreeting ? 'Happy Birthday!' : undefined,
     isTest: true,
   };
 }

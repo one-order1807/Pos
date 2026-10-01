@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { sessionTotals } from '../domain/bill';
 import { formatMoney } from '../domain/money';
-import type { PaymentMethod } from '../domain/types';
+import { EVENT_TYPES, type EventType, type PaymentMethod } from '../domain/types';
+import { matchCustomersByName } from '../domain/users';
 import { customerBillLines, PAY_LABEL, printCustomerBill } from '../printing/actions';
 import { templateById } from '../printing/templates';
 import { useStore } from '../store/store';
@@ -19,6 +20,8 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [event, setEvent] = useState<EventType | ''>('');
+  const [dismissedMatchId, setDismissedMatchId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [scrollSignal, setScrollSignal] = useState(0);
@@ -27,14 +30,34 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
     if (session) {
       setName(session.customerName);
       setPhone(session.customerPhone);
+      setEvent(session.customerPhone ? data.customers[session.customerPhone]?.event ?? '' : '');
       setMethod('cash');
       setCloseOpen(false);
+      setDismissedMatchId(null);
       // Triggers AutoScrollView's delayed scroll-to-bottom the moment the popup opens, so a long
       // bill's last items are reachable without the person having to find the scroll themselves.
       setScrollSignal(Date.now());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  const nameMatches = useMemo(() => matchCustomersByName(data.customers, name), [data.customers, name]);
+  // Only offer suggestions while the typed phone hasn't already settled on one of the matches -
+  // once it has, the person has effectively linked to that existing customer already.
+  const suggestions = nameMatches.filter((m) => m.phone !== phone);
+  const topMatch = nameMatches[0];
+  // Ambiguous case: the typed name matches an existing customer, but the typed phone is for
+  // someone else (or blank) - ask directly instead of silently creating a second record for the
+  // same person, or silently merging two different people who happen to share a name.
+  const showSameCustomerAsk =
+    !!topMatch && topMatch.id !== dismissedMatchId && topMatch.phone !== phone && !!phone.trim() && phone.trim().length >= 6;
+
+  function pickSuggestion(m: (typeof nameMatches)[number]) {
+    setName(m.name);
+    setPhone(m.phone);
+    if (m.event) setEvent(m.event);
+    setDismissedMatchId(null);
+  }
 
   if (!sessionId || !session || session.status !== 'open') return null;
   const settings = data.settings.main;
@@ -55,7 +78,7 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
   }
 
   function completePayment(): boolean {
-    const res = pay(sessionId!, method, { name, phone });
+    const res = pay(sessionId!, method, { name, phone, event });
     if (res.error === 'unsent-items') {
       toast('Send the Cook Bill for new items before payment.', 'error');
       return false;
@@ -105,6 +128,22 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
           </View>
           <View style={styles.right}>
             <Field label="Customer name (optional)" value={name} onChangeText={setName} placeholder="Name" />
+            {suggestions.length > 0 ? (
+              <View style={styles.suggestBox}>
+                {suggestions.map((m) => (
+                  <Pressable
+                    key={m.id}
+                    style={styles.suggestRow}
+                    onPress={() => pickSuggestion(m)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Use existing customer ${m.name}`}
+                  >
+                    <Text style={styles.suggestName}>{m.name}</Text>
+                    <Text style={styles.suggestPhone}>{m.phone}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
             <Field
               label="Phone (optional, builds the Users list)"
               value={phone}
@@ -113,6 +152,29 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
               keyboardType="phone-pad"
               maxLength={15}
             />
+            {showSameCustomerAsk ? (
+              <View style={styles.sameAsk}>
+                <Text style={styles.sameAskText}>
+                  Same {topMatch.name} as before ({topMatch.phone})?
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Btn small label="Yes, same" onPress={() => pickSuggestion(topMatch)} style={{ flex: 1 }} />
+                  <Btn
+                    small
+                    label="No, different"
+                    variant="secondary"
+                    onPress={() => setDismissedMatchId(topMatch.id)}
+                    style={{ flex: 1 }}
+                  />
+                </View>
+              </View>
+            ) : null}
+            <Text style={styles.label}>Occasion (optional)</Text>
+            <View style={styles.methods}>
+              {EVENT_TYPES.map((e) => (
+                <Chip key={e} label={e} active={event === e} onPress={() => setEvent(event === e ? '' : e)} />
+              ))}
+            </View>
             <Text style={styles.label}>Payment method</Text>
             <View style={styles.methods}>
               {(['cash', 'upi', 'card'] as PaymentMethod[]).map((m) => (
@@ -158,7 +220,29 @@ const styles = StyleSheet.create({
   receiptScroll: { alignSelf: 'stretch', maxHeight: 420 },
   right: { flexGrow: 1, flexBasis: 260 },
   label: { fontFamily: fonts.medium, fontSize: 13, color: colors.textSoft, marginBottom: 8 },
-  methods: { flexDirection: 'row', marginBottom: 12 },
+  methods: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
   hint: { fontFamily: fonts.body, fontSize: 12, color: colors.textSoft, marginTop: 8, textAlign: 'center' },
   summary: { fontFamily: fonts.heading, fontSize: 30, color: colors.text, textAlign: 'center', marginBottom: 14 },
+  suggestBox: {
+    marginTop: -6,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    backgroundColor: colors.white,
+    overflow: 'hidden',
+  },
+  suggestRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.muted,
+  },
+  suggestName: { fontFamily: fonts.semibold, fontSize: 14, color: colors.text },
+  suggestPhone: { fontFamily: fonts.body, fontSize: 12, color: colors.textSoft },
+  sameAsk: { backgroundColor: colors.primaryTint, borderRadius: 10, padding: 10, marginBottom: 12, gap: 8 },
+  sameAskText: { fontFamily: fonts.medium, fontSize: 13, color: colors.primaryDark },
 });

@@ -1,4 +1,4 @@
-import type { Category, Customer, MenuItem, Session, Settings, State, TableDef } from './types';
+import type { Category, Customer, GstLine, MenuItem, Session, Settings, State, TableDef } from './types';
 
 export const BACKUP_VERSION = 1;
 
@@ -46,7 +46,32 @@ function sanitizeBillSettings(incoming: unknown, fallback: Settings['bill']): Se
     qrText: typeof b.qrText === 'string' ? b.qrText : fallback.qrText,
     qrRaster: isValidRasterAsset(b.qrRaster) ? b.qrRaster : null,
     showOccasionGreeting: typeof b.showOccasionGreeting === 'boolean' ? b.showOccasionGreeting : fallback.showOccasionGreeting,
+    fssaiNumber: typeof b.fssaiNumber === 'string' ? b.fssaiNumber : fallback.fssaiNumber,
   };
+}
+
+function isValidGstLine(v: unknown): v is GstLine {
+  if (!v || typeof v !== 'object') return false;
+  const l = v as Record<string, unknown>;
+  return typeof l.type === 'string' && typeof l.percent === 'string';
+}
+
+/** Defensively repairs a restored GST settings object, and migrates the pre-Round-5 single flat
+ * percentage shape ({enabled, percent, number}) into one GST line - otherwise an old backup would
+ * crash the restore or silently lose its GST setting. */
+function sanitizeGstSettings(incoming: unknown, fallback: Settings['gst']): Settings['gst'] {
+  if (!incoming || typeof incoming !== 'object') return fallback;
+  const g = incoming as Record<string, unknown>;
+  const enabled = typeof g.enabled === 'boolean' ? g.enabled : fallback.enabled;
+  const number = typeof g.number === 'string' ? g.number : fallback.number;
+  if (Array.isArray(g.lines)) {
+    const lines = g.lines.filter(isValidGstLine);
+    return { enabled, number, lines: lines.length ? lines : fallback.lines };
+  }
+  if (typeof g.percent === 'string') {
+    return { enabled, number, lines: [{ type: 'GST', percent: g.percent }] };
+  }
+  return { enabled, number, lines: fallback.lines };
 }
 
 export function buildBackup(state: State, now: number): BackupFile {
@@ -131,6 +156,7 @@ export function applyBackup(current: State, backup: BackupFile): State {
         orderCounter: cur.orderCounter,
         priorityCounter: cur.priorityCounter,
         bill: sanitizeBillSettings(incoming.bill, cur.bill),
+        gst: sanitizeGstSettings(incoming.gst, cur.gst),
       }
     : cur;
   const sessions = byId(backup.data.sessions);

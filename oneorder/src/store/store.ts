@@ -49,7 +49,11 @@ interface StoreShape {
   markBillPrinted: (sessionId: string) => void;
   setCustomer: (sessionId: string, name: string, phone: string) => void;
   closeTab: (sessionId: string) => void;
-  pay: (sessionId: string, method: PaymentMethod, customer?: { name: string; phone: string }) => ops.PayResult;
+  pay: (
+    sessionId: string,
+    method: PaymentMethod,
+    customer?: { name: string; phone: string; event?: Customer['event'] },
+  ) => ops.PayResult;
 
   startTicket: (id: string) => void;
   markReady: (id: string) => void;

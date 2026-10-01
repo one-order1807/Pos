@@ -45,7 +45,7 @@ test('money formatting and GST parsing', () => {
   assert.equal(parseGstPercent('250'), 100);
 });
 
-test('GST: off => no GST line; on => calculated; percent remembered', () => {
+test('GST: off => no GST line; on => calculated, one line per configured type; percent remembered', () => {
   let s = seedState();
   const cs = createOrder(s, 'dine-in', 'tbl_1');
   s = cs.state;
@@ -54,15 +54,33 @@ test('GST: off => no GST line; on => calculated; percent remembered', () => {
   const lines = s.sessions[cs.id].lines;
   const off = computeTotals(lines, s.settings.main.gst);
   assert.equal(off.gstAmount, 0);
+  assert.equal(off.gstLines.length, 0);
   assert.equal(off.total, 390);
-  const on = computeTotals(lines, { enabled: true, percent: '5', number: 'X' });
+  const on = computeTotals(lines, { enabled: true, lines: [{ type: 'GST', percent: '5' }], number: 'X' });
   assert.equal(on.subtotal, 390);
   assert.equal(on.gstAmount, 19.5);
   assert.equal(on.total, 409.5);
-  const off2 = computeTotals(lines, { enabled: false, percent: '5', number: 'X' });
+  assert.deepEqual(on.gstLines, [{ type: 'GST', percent: 5, amount: 19.5 }]);
+  const off2 = computeTotals(lines, { enabled: false, lines: [{ type: 'GST', percent: '5' }], number: 'X' });
   assert.equal(off2.total, 390);
-  const one = computeTotals(lines, { enabled: true, percent: '1%', number: '' });
+  const one = computeTotals(lines, { enabled: true, lines: [{ type: 'GST', percent: '1%' }], number: '' });
   assert.equal(one.gstAmount, 3.9);
+  // multi-line: SGST + CGST print and sum separately, matching real GST invoices
+  const split = computeTotals(lines, {
+    enabled: true,
+    lines: [
+      { type: 'SGST', percent: '2.5' },
+      { type: 'CGST', percent: '2.5' },
+    ],
+    number: '',
+  });
+  assert.equal(split.gstLines.length, 2);
+  assert.deepEqual(split.gstLines, [
+    { type: 'SGST', percent: 2.5, amount: 9.75 },
+    { type: 'CGST', percent: 2.5, amount: 9.75 },
+  ]);
+  assert.equal(split.gstAmount, 19.5);
+  assert.equal(split.total, 409.5);
 });
 
 function createOrder(s: State, type: 'dine-in' | 'takeaway' | 'delivery', tableId?: string) {
@@ -202,7 +220,7 @@ test('payment: unsent items block, then pays, freezes totals, unmerges', () => {
   s = ops.applyTables(s, m.tables);
   assert.equal(ops.visibleTables(s)[0].label, 'T-1M3');
   assert.ok(!ops.visibleTables(s).some((t) => t.id === 'tbl_2'));
-  s = { ...s, settings: { main: { ...s.settings.main, gst: { enabled: true, percent: '5', number: 'G1' } } } };
+  s = { ...s, settings: { main: { ...s.settings.main, gst: { enabled: true, lines: [{ type: 'GST', percent: '5' }], number: 'G1' } } } };
 
   const o = ops.createSession(s, 'dine-in', T0, 'tbl_2'); // member resolves to merged table
   s = o.state;
@@ -273,7 +291,7 @@ test('kitchen: start, ready, and drag-reorder pending priority', () => {
 
 test('dashboard derives everything from paid sessions', () => {
   let s = seedState();
-  s = { ...s, settings: { main: { ...s.settings.main, gst: { enabled: false, percent: '5', number: '' } } } };
+  s = { ...s, settings: { main: { ...s.settings.main, gst: { enabled: false, lines: [{ type: 'GST', percent: '5' }], number: '' } } } };
   const mk = (type: 'dine-in' | 'takeaway', code: string, qty: number, method: 'cash' | 'upi', phone: string) => {
     const o = type === 'dine-in' ? createOrder(s, type, 'tbl_1') : createOrder(s, type);
     s = ops.addLine(o.state, o.id, item(o.state, code), qty);
@@ -345,12 +363,34 @@ test('backup: no PIN leak, preview, restore; menu import is additive-only', () =
   assert.equal(JSON.parse(JSON.stringify(buildMenuExport(s))).items.length, 15);
 });
 
+test('backup restore migrates a pre-Round-5 flat-percent GST backup into one GST line', () => {
+  const s = seedState();
+  // Simulates a Round-4-or-earlier backup file: {enabled, percent, number}, no `lines` array.
+  const oldShapeBackup = {
+    app: 'oneorder' as const,
+    version: 1,
+    exportedAt: T0,
+    data: {
+      categories: [],
+      items: [],
+      tables: [],
+      sessions: [],
+      customers: [],
+      settings: { ...s.settings.main, gst: { enabled: true, percent: '12', number: 'OLDGST1' } } as any,
+    },
+  };
+  const restored = applyBackup(s, oldShapeBackup);
+  assert.equal(restored.settings.main.gst.enabled, true);
+  assert.deepEqual(restored.settings.main.gst.lines, [{ type: 'GST', percent: '12' }]);
+  assert.equal(restored.settings.main.gst.number, 'OLDGST1');
+});
+
 test('print layout: fits width, consolidated, GST line only when on, test marked', () => {
   const s = seedState();
   const bill = s.settings.main.bill;
   for (const t of TEMPLATES) {
     for (const gstOn of [false, true]) {
-      const gst = { enabled: gstOn, percent: '5', number: 'GSTIN123' };
+      const gst = { enabled: gstOn, lines: [{ type: 'GST', percent: '5' }], number: 'GSTIN123' };
       const data = sampleBillData(bill, gst, T0);
       const lines = textOnly(layoutCustomerBill(t, data));
       for (const l of lines) {

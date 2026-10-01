@@ -34,11 +34,12 @@ export function buildBillData(state: State, s: Session, when: number): BillData 
     subtotal: totals.subtotal,
     gstPercent: totals.gstPercent,
     gstAmount: totals.gstAmount,
+    gstLines: totals.gstLines,
     total: totals.total,
     when,
     paymentLabel: s.paymentMethod ? PAY_LABEL[s.paymentMethod] : undefined,
     customer: s.customerName || undefined,
-    occasionLine: occasionLine(s.customerPhone ? state.customers[s.customerPhone] : undefined, s.customerName, settings.bill.showOccasionGreeting),
+    occasionLine: occasionLine(s.customerPhone ? state.customers[s.customerPhone] : undefined, settings.bill.showOccasionGreeting),
   };
 }
 
@@ -112,28 +113,6 @@ export async function printCustomerBill(sessionId: string): Promise<PrintOutcome
   const r = await run(customerBillLines(state, s, Date.now()));
   if (r.ok && s.status === 'open') useStore.getState().markBillPrinted(sessionId);
   return r;
-}
-
-/**
- * Deliberately not a bill: no items, totals, GST or template layout - this exists only so staff
- * can confirm the printer is actually connected and printing before service starts, without
- * pulling in any real order data or looking like an actual Cook/Customer Bill.
- */
-export function connectivityTestLines(): PrintBlock[] {
-  return [
-    { text: 'ONEORDER', bold: true, size: 2, align: 'center' },
-    { text: 'Printer connection test', align: 'center' },
-    { text: '--------------------------------', align: 'center' },
-    { text: new Date().toLocaleString(), align: 'center' },
-    { text: 'If you can read this, the printer', align: 'center' },
-    { text: 'is connected and working.', align: 'center' },
-    { text: ' ' },
-    { text: ' ' },
-  ];
-}
-
-export async function printConnectivityTest(): Promise<PrintOutcome> {
-  return run(connectivityTestLines());
 }
 
 export function testLines(state: State, templateId: string, kind: 'customer' | 'cook'): PrintBlock[] {

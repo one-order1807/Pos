@@ -26,6 +26,7 @@ function baseBillData(s: ReturnType<typeof seedState>): BillData {
     subtotal: 730,
     gstPercent: 0,
     gstAmount: 0,
+    gstLines: [],
     total: 730,
     when: T0,
   };
@@ -47,15 +48,14 @@ test('customer bill: sectioned structure with Bill #, table, and a rule between 
   }
 });
 
-test('occasion greeting: Birthday prints with name, Anniversary without, off by default, Other/no-event silent', () => {
-  const birthday = { event: 'Birthday' as const, name: 'Rahul' };
-  assert.equal(occasionLine(birthday, '', false), undefined, 'off by default');
-  assert.equal(occasionLine(birthday, '', true), 'Happy Birthday, Rahul!');
-  assert.equal(occasionLine(birthday, 'Session Name', true), 'Happy Birthday, Session Name!', 'session name wins over stored name');
-  assert.equal(occasionLine({ event: 'Anniversary', name: 'Rahul' }, '', true), 'Happy Anniversary!', 'never includes a name');
-  assert.equal(occasionLine({ event: 'Other', name: 'Rahul' }, '', true), undefined);
-  assert.equal(occasionLine({ event: '', name: 'Rahul' }, '', true), undefined);
-  assert.equal(occasionLine(undefined, '', true), undefined);
+test('occasion greeting: generic Birthday/Anniversary lines, off by default, Other/no-event silent', () => {
+  const birthday = { event: 'Birthday' as const };
+  assert.equal(occasionLine(birthday, false), undefined, 'off by default');
+  assert.equal(occasionLine(birthday, true), 'Happy Birthday!', 'never includes a name');
+  assert.equal(occasionLine({ event: 'Anniversary' }, true), 'Happy Anniversary!', 'never includes a name');
+  assert.equal(occasionLine({ event: 'Other' }, true), undefined);
+  assert.equal(occasionLine({ event: '' }, true), undefined);
+  assert.equal(occasionLine(undefined, true), undefined);
 });
 
 test('logo and QR appear as real image blocks on the bill, and the brand footer is always present', () => {
@@ -76,7 +76,7 @@ test('logo and QR appear as real image blocks on the bill, and the brand footer 
   assert.equal(images[1].width, 16);
   const brandLines = textOnly(blocks).filter((l) => l.brand);
   assert.equal(brandLines.length, 1);
-  assert.equal(brandLines[0].text, 'ONE ORDER x Cloud Build');
+  assert.equal(brandLines[0].text, `${s.settings.main.bill.name} · ONEORDER`);
 
   const noAssets = layoutCustomerBill(templateById('t2'), baseBillData(s));
   assert.equal(noAssets.filter(isPrintImage).length, 0, 'no image blocks when nothing is configured');

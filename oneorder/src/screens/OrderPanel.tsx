@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { roundGroups, sessionTotals } from '../domain/bill';
 import { formatDuration, formatMoney, formatPercent } from '../domain/money';
 import { sessionLabel, unsentLines } from '../domain/ops';
-import { printCookTicket, TYPE_LABEL } from '../printing/actions';
+import { printCookTicket, printCustomerBill, TYPE_LABEL } from '../printing/actions';
 import { useStore } from '../store/store';
 import { Btn, Confirm, EmptyState, Icon, toast, useNow } from '../ui/components';
 import { colors, fonts } from '../ui/theme';
@@ -37,7 +37,9 @@ export function OrderPanel({ sessionId }: { sessionId: string | null }) {
   const totals = sessionTotals(session, settings.gst);
   const unsent = unsentLines(session);
   const groups = roundGroups(session.lines);
-  const needsTable = settings.tableMode && session.type === 'dine-in';
+  // Combined-bill cafes skip table selection entirely, the same way Table Mode being off does -
+  // counter-service orders never need a table assigned.
+  const needsTable = settings.tableMode && !settings.combinedBillPrint && session.type === 'dine-in';
 
   async function doSend(): Promise<boolean> {
     const r = sendCook();
@@ -85,9 +87,11 @@ export function OrderPanel({ sessionId }: { sessionId: string | null }) {
     setShowBill(true);
   }
 
-  // Combined-bill mode (Dev Mode toggle): one tap sends+prints the Cook Bill (if there's anything
-  // new to send) and then opens the same Customer Bill popup as usual - the two bills stay exactly
-  // as they were, just triggered together instead of by two separate buttons.
+  // Combined-bill mode (Dev Mode toggle): one tap does the whole counter-service flow - send+print
+  // the Cook Bill, print the Customer Bill, record payment and close/release the table - with no
+  // popup in between. Payment is always recorded as Cash (there's no step left to pick a method);
+  // cafes that need UPI/Card tracking per order should leave the toggle off and use the normal
+  // two-button flow instead.
   async function onPrintBill() {
     if (busy) return;
     if (session!.lines.length === 0) {
@@ -100,7 +104,17 @@ export function OrderPanel({ sessionId }: { sessionId: string | null }) {
         const ok = await doSend();
         if (!ok) return;
       }
-      setShowBill(true);
+      const r = await printCustomerBill(session!.id);
+      if (!r.ok) {
+        toast(`Not printed, order kept open: ${r.error}`, 'error', 5000);
+        return;
+      }
+      const res = useStore.getState().pay(session!.id, 'cash');
+      if (res.error) {
+        toast('Printed, but could not close the order automatically.', 'error', 5000);
+        return;
+      }
+      toast('Bill printed — order complete.', 'success');
     } finally {
       setBusy(false);
     }
@@ -206,10 +220,12 @@ export function OrderPanel({ sessionId }: { sessionId: string | null }) {
       </ScrollView>
 
       <View style={styles.totals}>
-        {settings.gst.enabled ? (
+        {totals.gstLines.length > 0 ? (
           <>
             <Row a="Subtotal" b={formatMoney(totals.subtotal)} />
-            <Row a={`GST (${formatPercent(totals.gstPercent)}%)`} b={formatMoney(totals.gstAmount)} />
+            {totals.gstLines.map((gl, i) => (
+              <Row key={i} a={`${gl.type} (${formatPercent(gl.percent)}%)`} b={formatMoney(gl.amount)} />
+            ))}
           </>
         ) : null}
         <Row a="TOTAL" b={formatMoney(totals.total)} big />

@@ -171,10 +171,10 @@ test('cook bill: round-specific vs whole-bill layouts; sample bill amount is Rs 
   assert.ok(whole.includes('5 x Masala Dosa'), '3 + 2 combined into one line');
   assert.ok(whole.includes('5 x Masala Chai'));
 
-  const off = sampleBillData(bill, { enabled: false, percent: '5', number: '' }, T0);
+  const off = sampleBillData(bill, { enabled: false, lines: [{ type: 'GST', percent: '5' }], number: '' }, T0);
   assert.equal(off.subtotal, 765);
   assert.equal(off.total, 765);
-  const on = sampleBillData(bill, { enabled: true, percent: '5', number: 'G' }, T0);
+  const on = sampleBillData(bill, { enabled: true, lines: [{ type: 'GST', percent: '5' }], number: 'G' }, T0);
   assert.equal(on.total, 803.25);
   for (const tpl of TEMPLATES) {
     const text = textOnly(layoutCustomerBill(tpl, off)).map((l) => l.text).join('\n');

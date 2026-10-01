@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AppState, Image, Linking, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { AppState, Image, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import appJson from '../../app.json';
 import { parseBackup, buildBackup, buildMenuExport, previewBackup, type BackupFile, type BackupPreview } from '../domain/backup';
 import { computeTotals } from '../domain/bill';
-import { formatMoney, formatPercent, parseGstPercent } from '../domain/money';
+import { formatMoney, formatPercent } from '../domain/money';
+import type { GstLine, GstSettings } from '../domain/types';
 import { useStore } from '../store/store';
 import { syncNow, useSyncStatus } from '../sync/engine';
 import { rasterizeLogo, rasterizeQr } from '../printing/assets';
@@ -128,13 +129,6 @@ function BubbleStatus() {
   return (
     <Card style={styles.section}>
       <SectionTitle>Floating bubble</SectionTitle>
-      <Text style={styles.hint}>
-        Always shows automatically when the app is minimized - there's no on/off setting for it. It needs Android's
-        "Display over other apps" permission, which only Android itself can present (there's no in-app dialog for
-        this one specific permission - that's an Android platform rule, not something this app controls). ONEORDER
-        asks for it automatically the first time you minimize the app if it isn't granted yet, or you can grant it
-        right now below.
-      </Text>
       {granted ? (
         <Text style={styles.hint}>Permission granted.</Text>
       ) : (
@@ -197,6 +191,13 @@ function BillSetup() {
       <Field label="Address" value={form.address} onChangeText={(t) => edit({ address: t })} multiline maxLength={120} />
       <Field label="Phone" value={form.phone} onChangeText={(t) => edit({ phone: t })} keyboardType="phone-pad" maxLength={20} />
       <Field label="Footer / thank-you text" value={form.footer} onChangeText={(t) => edit({ footer: t })} maxLength={80} />
+      <Field
+        label="FSSAI number (optional)"
+        value={form.fssaiNumber}
+        onChangeText={(t) => edit({ fssaiNumber: t })}
+        maxLength={20}
+        placeholder="Leave blank to not print it"
+      />
       <View style={styles.logoRow}>
         {form.logoRaster ? (
           <Image source={{ uri: rasterAssetToBmpDataUri(form.logoRaster) }} style={styles.logo} resizeMode="contain" />
@@ -222,6 +223,7 @@ function BillSetup() {
             address: form.address.trim(),
             phone: form.phone.trim(),
             footer: form.footer.trim(),
+            fssaiNumber: form.fssaiNumber.trim(),
             logoUri: form.logoUri,
             logoRaster: form.logoRaster,
           });
@@ -256,26 +258,48 @@ function BillSetup() {
 function GstSetup() {
   const gst = useStore((s) => s.data.settings.main.gst);
   const setGst = useStore((s) => s.setGst);
-  const [percent, setPercent] = useState(gst.percent);
+  const [lines, setLines] = useState<GstLine[]>(gst.lines.length ? gst.lines : [{ type: 'GST', percent: '' }]);
   const [number, setNumber] = useState(gst.number);
+  const [dirty, setDirty] = useState(false);
 
   const sample = useMemo(() => {
-    const totals = computeTotals(
+    const draftGst: GstSettings = { enabled: gst.enabled, lines, number };
+    return computeTotals(
       [{ id: 'x', itemId: 'x', name: 'x', categoryId: 'x', unitPrice: 100, qty: 1, note: '', round: null }],
-      { enabled: gst.enabled, percent, number },
+      draftGst,
     );
-    return totals;
-  }, [gst.enabled, percent, number]);
+  }, [gst.enabled, lines, number]);
 
-  const pct = parseGstPercent(percent);
-  const invalid = gst.enabled && (percent.trim() === '' || Number.isNaN(Number(percent.replace('%', '').trim())));
+  function updateLine(i: number, patch: Partial<GstLine>) {
+    setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+    setDirty(true);
+  }
+  function addLine() {
+    setLines((ls) => [...ls, { type: '', percent: '' }]);
+    setDirty(true);
+  }
+  function removeLine(i: number) {
+    setLines((ls) => (ls.length > 1 ? ls.filter((_, idx) => idx !== i) : ls));
+    setDirty(true);
+  }
+  function save() {
+    const cleaned = lines.filter((l) => l.type.trim() || l.percent.trim());
+    const toSave = cleaned.length ? cleaned : [{ type: 'GST', percent: '' }];
+    setGst({ lines: toSave, number: number.trim() });
+    setLines(toSave);
+    setDirty(false);
+    toast('GST saved.', 'success');
+  }
 
   return (
     <Card style={styles.section}>
       <View style={styles.switchRow}>
         <View style={{ flex: 1 }}>
           <SectionTitle>GST</SectionTitle>
-          <Text style={styles.hint}>Off: bills show a clean total with no GST. On: a GST line is added above the total on every bill.</Text>
+          <Text style={styles.hint}>
+            Off: bills show a clean total with no GST. On: every line below (e.g. SGST, CGST) prints as its own row
+            above the total.
+          </Text>
         </View>
         <Switch
           value={gst.enabled}
@@ -288,46 +312,58 @@ function GstSetup() {
         />
       </View>
       <View style={{ opacity: gst.enabled ? 1 : 0.45 }} pointerEvents={gst.enabled ? 'auto' : 'none'}>
-        <Field
-          label="GST percentage (type any value, e.g. 1, 5, 18)"
-          value={percent}
-          onChangeText={setPercent}
-          onBlur={() => gst.enabled && !invalid && setGst({ percent: percent.trim() })}
-          keyboardType="decimal-pad"
-          maxLength={6}
-          editable={gst.enabled}
-        />
+        {lines.map((l, i) => (
+          <View key={i} style={styles.gstRow}>
+            <View style={{ flex: 1 }}>
+              <Field label="Type" value={l.type} onChangeText={(t) => updateLine(i, { type: t })} placeholder="SGST" editable={gst.enabled} />
+            </View>
+            <View style={{ width: 90 }}>
+              <Field
+                label="%"
+                value={l.percent}
+                onChangeText={(t) => updateLine(i, { percent: t })}
+                placeholder="2.5"
+                keyboardType="decimal-pad"
+                maxLength={6}
+                editable={gst.enabled}
+              />
+            </View>
+            <Pressable
+              onPress={() => removeLine(i)}
+              style={styles.gstRemove}
+              accessibilityLabel={`Remove ${l.type || 'GST'} line`}
+              disabled={!gst.enabled || lines.length <= 1}
+            >
+              <Icon name="x" size={18} color={lines.length > 1 ? colors.red : colors.border} />
+            </Pressable>
+          </View>
+        ))}
+        <Btn small label="Add line" icon="plus" variant="secondary" onPress={addLine} disabled={!gst.enabled} style={{ alignSelf: 'flex-start', marginBottom: 16 }} />
         <Field
           label="GST registration number / label"
           value={number}
-          onChangeText={setNumber}
-          onBlur={() => setGst({ number: number.trim() })}
+          onChangeText={(t) => {
+            setNumber(t);
+            setDirty(true);
+          }}
           autoCapitalize="characters"
           maxLength={30}
           editable={gst.enabled}
         />
-        <Btn
-          small
-          label="Save GST details"
-          icon="check"
-          disabled={!gst.enabled || invalid}
-          onPress={() => {
-            setGst({ percent: percent.trim(), number: number.trim() });
-            toast(`GST saved: ${formatPercent(pct)}%.`, 'success');
-          }}
-        />
-        {invalid ? <Text style={styles.err}>Enter a number for the GST percentage.</Text> : null}
+        <Btn small label="Save GST details" icon="check" disabled={!gst.enabled || !dirty} onPress={save} />
       </View>
       <View style={styles.preview}>
         <Text style={styles.label}>Bill preview (Rs 100 order)</Text>
         {gst.enabled ? (
           <>
             <PreviewRow a="Subtotal" b={formatMoney(sample.subtotal)} />
-            <PreviewRow a={`GST (${formatPercent(pct)}%)`} b={formatMoney(sample.gstAmount)} />
+            {sample.gstLines.map((gl, i) => (
+              <PreviewRow key={i} a={`${gl.type} (${formatPercent(gl.percent)}%)`} b={formatMoney(gl.amount)} />
+            ))}
           </>
         ) : null}
         <PreviewRow a="TOTAL" b={formatMoney(sample.total)} bold />
-        {!gst.enabled ? <Text style={styles.hint}>Turn GST on to see the tax line. Your saved percentage ({formatPercent(parseGstPercent(gst.percent))}%) is remembered.</Text> : null}
+        {!gst.enabled ? <Text style={styles.hint}>Turn GST on to see the tax lines - your saved rates are remembered.</Text> : null}
       </View>
     </Card>
   );
@@ -377,9 +413,10 @@ function CombinedBillSetup() {
         <View style={{ flex: 1 }}>
           <SectionTitle>Combined Cook + Customer Bill</SectionTitle>
           <Text style={styles.hint}>
-            For counter-service: the Order tab shows one "Print Bill" button instead of two. It sends and prints the
-            Cook Bill automatically, then opens the Customer Bill popup right after - first Cook Bill, then Customer
-            Bill, one after another. Nothing about either bill's layout changes.
+            For counter-service: the Order tab shows one "Print Bill" button instead of two. One tap sends and
+            prints the Cook Bill, prints the Customer Bill, records payment as Cash, and closes/releases the order -
+            with no further steps. Table selection is skipped too, the same way it is when Table Mode is off.
+            Nothing about either bill's layout changes.
           </Text>
         </View>
         <Switch
@@ -578,4 +615,6 @@ const styles = StyleSheet.create({
   pRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
   pText: { fontFamily: fonts.medium, fontSize: 14, color: colors.text },
   btnRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  gstRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  gstRemove: { width: 44, height: 48, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
 });

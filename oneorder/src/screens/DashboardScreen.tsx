@@ -6,15 +6,17 @@ import {
   DRILLDOWN_DAYS,
   hourLabel,
   recentOrders,
+  type CustomRange,
   type OrderRow,
   type RangeKey,
   type Tier,
 } from '../domain/analytics';
-import { consolidateLines } from '../domain/bill';
+import { consolidateLines, sessionTotals } from '../domain/bill';
 import { formatDuration, formatMoney, formatPercent } from '../domain/money';
 import { activeSessionForTable, tableStatus, visibleTables } from '../domain/ops';
 import { PAY_LABEL } from '../printing/actions';
 import { useStore } from '../store/store';
+import { CalendarPicker } from '../ui/CalendarPicker';
 import { Chip, Dot, EmptyState, FadeIn, Icon, Modal, useNow, type IconName } from '../ui/components';
 import { blue, chartColors, colors, fonts, shadow } from '../ui/theme';
 import { STATUS_TEXT, statusColor } from './TablePicker';
@@ -52,13 +54,20 @@ export function DashboardScreen() {
   const now = useNow(30000);
   const { width } = useWindowDimensions();
   const [range, setRange] = useState<RangeKey>('today');
+  const [customRange, setCustomRange] = useState<CustomRange | null>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [hours12, setHours12] = useState(false);
   const [drill, setDrill] = useState<null | 'orders' | 'sales'>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
-  const d = useMemo(() => buildDashboard(data, range, now), [data, range, now]);
+  const d = useMemo(() => buildDashboard(data, range, now, customRange ?? undefined), [data, range, now, customRange]);
   const wide = width >= 900;
   const tableMode = data.settings.main.tableMode;
-  const rangeLabel = RANGES.find((r) => r.key === range)!.label;
+  const customLabel = customRange
+    ? customRange.start === customRange.end || new Date(customRange.start).toDateString() === new Date(customRange.end).toDateString()
+      ? new Date(customRange.start).toLocaleDateString()
+      : `${new Date(customRange.start).toLocaleDateString()} – ${new Date(customRange.end).toLocaleDateString()}`
+    : '';
+  const rangeLabel = range === 'custom' ? customLabel : RANGES.find((r) => r.key === range)!.label;
   const cardW = wide ? '32%' : '100%';
 
   const tables = visibleTables(data);
@@ -104,10 +113,19 @@ export function DashboardScreen() {
       <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 40 }}>
       <View style={styles.head}>
         <Text style={styles.title}>Dashboard</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ alignItems: 'center' }}>
           {RANGES.map((r) => (
             <Chip key={r.key} label={r.label} active={range === r.key} onPress={() => setRange(r.key)} />
           ))}
+          {customRange ? <Chip label={customLabel} active={range === 'custom'} onPress={() => setRange('custom')} /> : null}
+          <Pressable
+            onPress={() => setCalendarOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Pick a custom date or range"
+            style={styles.calendarBtn}
+          >
+            <Icon name="calendar" size={18} color={colors.primary} />
+          </Pressable>
         </ScrollView>
       </View>
       <View style={styles.headline}>
@@ -298,6 +316,14 @@ export function DashboardScreen() {
         <DrillList rows={drillRows} now={now} cards={drill === 'sales'} onOpen={setDetailId} />
       </Modal>
       <OrderDetail id={detailId} onClose={() => setDetailId(null)} />
+      <CalendarPicker
+        visible={calendarOpen}
+        onClose={() => setCalendarOpen(false)}
+        onApply={(r) => {
+          setCustomRange(r);
+          setRange('custom');
+        }}
+      />
       </ScrollView>
     </View>
   );
@@ -352,6 +378,7 @@ function OrderDetail({ id, onClose }: { id: string | null; onClose: () => void }
   const s = id ? data.sessions[id] : undefined;
   if (!id || !s || !s.final) return null;
   const lines = consolidateLines(s.lines);
+  const totals = sessionTotals(s, data.settings.main.gst);
   const label = s.tableId ? data.tables[s.tableId]?.label : undefined;
   return (
     <Modal visible onClose={onClose} title={`Order #${s.orderNo}`} width={480}>
@@ -376,10 +403,12 @@ function OrderDetail({ id, onClose }: { id: string | null; onClose: () => void }
           </View>
         ))}
         <View style={styles.detailDivider} />
-        {s.final.gstAmount > 0 || s.final.gstPercent > 0 ? (
+        {totals.gstLines.length > 0 ? (
           <>
-            <DetailRow a="Subtotal" b={formatMoney(s.final.subtotal)} />
-            <DetailRow a={`GST (${formatPercent(s.final.gstPercent)}%)`} b={formatMoney(s.final.gstAmount)} />
+            <DetailRow a="Subtotal" b={formatMoney(totals.subtotal)} />
+            {totals.gstLines.map((gl, i) => (
+              <DetailRow key={i} a={`${gl.type} (${formatPercent(gl.percent)}%)`} b={formatMoney(gl.amount)} />
+            ))}
           </>
         ) : null}
         <DetailRow a="TOTAL" b={formatMoney(s.final.total)} big />
@@ -546,6 +575,17 @@ function Donut({ values }: { values: number[] }) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', marginBottom: 6, gap: 8 },
+  calendarBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
   title: { fontFamily: fonts.heading, fontSize: 34, color: colors.text },
   headline: {
     flexDirection: 'row',

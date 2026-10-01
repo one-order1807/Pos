@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { customerHistory } from '../domain/analytics';
+import { formatMoney } from '../domain/money';
 import { EVENT_TYPES, type Customer, type EventType } from '../domain/types';
 import { filterUsers, usersToRows, type EventFilter } from '../domain/users';
 import { useStore } from '../store/store';
@@ -7,6 +9,50 @@ import { Btn, Chip, Confirm, EmptyState, Field, Icon, Modal, toast } from '../ui
 import { colors, fonts } from '../ui/theme';
 import { buildXlsx } from '../util/xlsx';
 import { shareBinary } from '../util/files';
+
+function fmtTime(ms: number): string {
+  const d = new Date(ms);
+  let h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, '0');
+  const suffix = h < 12 ? 'AM' : 'PM';
+  h = h % 12 === 0 ? 12 : h % 12;
+  return `${h}:${m} ${suffix}`;
+}
+
+function CustomerHistoryModal({ user, onClose }: { user: Customer | null; onClose: () => void }) {
+  const data = useStore((s) => s.data);
+  const visits = useMemo(() => (user ? customerHistory(data, user.id) : []), [data, user]);
+  return (
+    <Modal visible={!!user} onClose={onClose} title={user ? user.name || user.phone || 'Customer' : ''} width={520}>
+      {user ? (
+        <View>
+          {user.phone ? <Text style={styles.histMeta}>{user.phone}</Text> : null}
+          {user.event ? (
+            <View style={styles.pill}>
+              <Text style={styles.pillText}>{user.event}</Text>
+            </View>
+          ) : null}
+          {visits.length === 0 ? (
+            <EmptyState icon="inbox" text="No paid orders yet for this customer." />
+          ) : (
+            visits.map((v) => (
+              <View key={v.id} style={styles.histRow}>
+                <Text style={styles.histOrder}>#{v.orderNo}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tdBold}>{v.label}</Text>
+                  <Text style={styles.histMeta}>
+                    {new Date(v.paidAt).toLocaleDateString()} · {fmtTime(v.paidAt)}
+                  </Text>
+                </View>
+                <Text style={styles.tdBold}>{formatMoney(v.total)}</Text>
+              </View>
+            ))
+          )}
+        </View>
+      ) : null}
+    </Modal>
+  );
+}
 
 
 export function UsersScreen() {
@@ -19,6 +65,7 @@ export function UsersScreen() {
   const [editing, setEditing] = useState<{ user: Customer | null } | null>(null);
   const [form, setForm] = useState<{ name: string; phone: string; event: EventType | '' }>({ name: '', phone: '', event: '' });
   const [deleting, setDeleting] = useState<Customer | null>(null);
+  const [history, setHistory] = useState<Customer | null>(null);
   const [busy, setBusy] = useState(false);
 
   const list = useMemo(() => filterUsers(customers, query, filter), [customers, query, filter]);
@@ -104,7 +151,7 @@ export function UsersScreen() {
           />
         ) : null}
         {list.map((u, i) => (
-          <Pressable key={u.id} style={styles.row} onPress={() => openEditor(u)} accessibilityRole="button" accessibilityLabel={`Edit ${u.name || u.phone}`}>
+          <Pressable key={u.id} style={styles.row} onPress={() => setHistory(u)} accessibilityRole="button" accessibilityLabel={`View history for ${u.name || u.phone}`}>
             <Text style={[styles.td, { width: 56 }]}>{i + 1}</Text>
             <Text style={[styles.tdBold, { flex: 1.4 }]} numberOfLines={1}>
               {u.name || '—'}
@@ -158,6 +205,8 @@ export function UsersScreen() {
           setDeleting(null);
         }}
       />
+
+      <CustomerHistoryModal user={history} onClose={() => setHistory(null)} />
     </View>
   );
 }
@@ -200,4 +249,14 @@ const styles = StyleSheet.create({
   del: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   lbl: { fontFamily: fonts.medium, fontSize: 13, color: colors.textSoft, marginBottom: 8 },
   eventRow: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 8, marginBottom: 14 },
+  histMeta: { fontFamily: fonts.body, fontSize: 12, color: colors.textSoft, marginBottom: 10 },
+  histRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.muted,
+  },
+  histOrder: { fontFamily: fonts.bold, fontSize: 15, color: colors.primaryDark, width: 44 },
 });

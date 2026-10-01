@@ -96,13 +96,13 @@ test('store + real SQLite: seed, persist, double-tap guard, reload', async () =>
     'synced deletions are purged',
   );
 
-  // settings edits persist (GST toggle keeps percent)
-  useStore.getState().setGst({ enabled: true, percent: '18' });
+  // settings edits persist (GST toggle keeps its lines)
+  useStore.getState().setGst({ enabled: true, lines: [{ type: 'GST', percent: '18' }] });
   useStore.getState().setGst({ enabled: false });
   useStore.getState().setGst({ enabled: true });
   await flushWrites();
   const gst = (await loadState()).state.settings.main.gst;
-  assert.deepEqual([gst.enabled, gst.percent], [true, '18']);
+  assert.deepEqual([gst.enabled, gst.lines], [true, [{ type: 'GST', percent: '18' }]]);
 
   // table mode off hides tab
   useStore.getState().setTab('tables');
