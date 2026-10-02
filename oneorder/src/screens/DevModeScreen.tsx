@@ -165,7 +165,9 @@ function BillSetup() {
       setBill({ logoUri: uri, logoRaster });
       toast('Logo updated.', 'success');
     } catch (e: any) {
-      toast(`Logo not saved: ${e?.message ?? e} Use a PNG file.`, 'error', 5000);
+      // decodePng()'s own error messages are already specific and actionable (wrong file type,
+      // unsupported bit depth, etc.) - no need to pad them with a generic suffix on top.
+      toast(`Logo not saved: ${e?.message ?? e}`, 'error', 6000);
     } finally {
       setBusy(false);
     }
@@ -208,7 +210,11 @@ function BillSetup() {
         )}
         <View style={{ flex: 1 }}>
           <Text style={styles.label}>Logo</Text>
-          <Text style={styles.hint}>PNG only. This prints at the top of every bill, shown here exactly as it will print.</Text>
+          <Text style={styles.hint}>
+            PNG only (not JPEG/HEIC/WebP) - most "Save/Export Image" flows offer a PNG option even for a photo. Any
+            size works, it's scaled down automatically. Prints at the top of every bill, shown here exactly as it
+            will print.
+          </Text>
         </View>
         <Btn small label={form.logoRaster ? 'Change' : 'Choose'} icon="upload" variant="secondary" onPress={chooseLogo} disabled={busy} />
         {form.logoRaster ? <Btn small icon="trash-2" variant="secondary" onPress={removeLogo} disabled={busy} /> : null}

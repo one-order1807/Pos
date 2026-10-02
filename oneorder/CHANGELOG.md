@@ -4,6 +4,15 @@ One short entry per release: what changed, what was fixed, and the version it sh
 the answer to "what changed, is this done, what's in this build" going forward — keep it updated
 every round rather than reconstructing it from chat history later.
 
+## v1.3.1 — 2026-10-02
+
+- Fixed: uploading a logo in Dev Mode (Bill setup) could fail with "Not a PNG file" even for a
+  real PNG - the decoder only handled the single most common PNG export shape (8-bit, non-
+  interlaced). It now also handles 16-bit PNGs and Adam7-interlaced PNGs, both common exports from
+  image editors. The file picker is now also restricted to PNG specifically (was any image type),
+  so a JPEG/HEIC/WebP can't be selected in the first place only to fail on upload - the hint text
+  next to the upload button now says exactly what's expected (PNG only, any size).
+
 ## v1.3.0 — 2026-10-02 (Round 6)
 
 - Fixed: QR code on printed bills is smaller (less raster data sent to the printer, which was

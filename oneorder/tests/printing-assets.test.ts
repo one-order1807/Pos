@@ -35,7 +35,39 @@ test('PNG decode: grayscale', () => {
 });
 
 test('PNG decode: rejects non-PNG data', () => {
-  assert.throws(() => decodePng(Uint8Array.of(1, 2, 3, 4)), /Not a PNG/);
+  assert.throws(() => decodePng(Uint8Array.of(1, 2, 3, 4)), /not a PNG/i);
+});
+
+test('PNG decode: 16-bit depth is downsampled to 8-bit (high byte) correctly', () => {
+  // 16-bit RGBA: each sample's high byte is what an 8-bit viewer/printer would show.
+  const png = buildPng(
+    1,
+    2,
+    6,
+    [
+      [0xabcd, 0x1234, 0xffff, 0x8000],
+      [0x00ff, 0x0100, 0x0000, 0xffff],
+    ],
+    { bitDepth: 16 },
+  );
+  const img = decodePng(png);
+  assert.deepEqual([...img.rgba.subarray(0, 4)], [0xab, 0x12, 0xff, 0x80]);
+  assert.deepEqual([...img.rgba.subarray(4, 8)], [0x00, 0x01, 0x00, 0xff]);
+});
+
+test('PNG decode: Adam7-interlaced PNGs decode to the same pixels as non-interlaced', () => {
+  const w = 9;
+  const h = 7;
+  const pixels = Array.from({ length: w * h }, (_, i) => {
+    const x = i % w;
+    const y = Math.floor(i / w);
+    return [(x * 23) % 256, (y * 41) % 256, (x + y) % 256];
+  });
+  const plain = decodePng(buildPng(w, h, 2, pixels, { interlace: 0 }));
+  const interlaced = decodePng(buildPng(w, h, 2, pixels, { interlace: 1 }));
+  assert.equal(interlaced.width, w);
+  assert.equal(interlaced.height, h);
+  assert.deepEqual([...interlaced.rgba], [...plain.rgba], 'every pixel lands in the same place regardless of interlacing');
 });
 
 test('dithering: uniform black/white images dither cleanly with no drift', () => {

@@ -35,7 +35,12 @@ export async function pickTextFile(): Promise<{ name: string; text: string } | n
 }
 
 export async function pickLogo(): Promise<string | null> {
-  const res = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true, multiple: false });
+  // Restricted to PNG specifically (not 'image/*') - the app's logo decoder only reads PNG, so
+  // letting the OS picker offer JPEG/HEIC/WebP files here just set people up to pick a file that
+  // would then fail with a decode error. Most "Save Image"/export flows offer a PNG option even
+  // when the source was a photo, so this isn't a dead end - see the hint text next to the upload
+  // button in Dev Mode for exactly what's expected.
+  const res = await DocumentPicker.getDocumentAsync({ type: 'image/png', copyToCacheDirectory: true, multiple: false });
   if (res.canceled || !res.assets?.length) return null;
   const asset = res.assets[0];
   const ext = (asset.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '');
