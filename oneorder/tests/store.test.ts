@@ -110,4 +110,63 @@ test('store + real SQLite: seed, persist, double-tap guard, reload', async () =>
   assert.equal(useStore.getState().tab, 'order');
   assert.equal(useStore.getState().data.settings.main.tableMode, false);
   assert.equal(Object.keys(useStore.getState().data.tables).length, 8, 'tables kept while hidden');
+
+  // Chef Mode: wrong code does nothing and stays locked; right code exits; the flag is a
+  // per-device SQLite pref (device_prefs table), never one of the synced "docs" rows.
+  assert.equal(useStore.getState().chefMode, false);
+  useStore.getState().enterChefMode();
+  assert.equal(useStore.getState().chefMode, true);
+  assert.equal(useStore.getState().tab, 'kitchen');
+  assert.equal(useStore.getState().exitChefMode('0000'), false, 'wrong code is rejected');
+  assert.equal(useStore.getState().chefMode, true, 'still in Chef Mode after a wrong code');
+  assert.equal(useStore.getState().exitChefMode('1807'), true);
+  assert.equal(useStore.getState().chefMode, false);
+  await wait(20); // setDevicePref() is fire-and-forget from the store action
+  const pref = shim.db.prepare('SELECT value FROM device_prefs WHERE key = ?').get('chefMode') as { value: string } | undefined;
+  assert.equal(pref?.value, '0', 'persisted in the separate per-device table, not as a synced doc');
+});
+
+test('applyRemoteChanges: last-write-wins by timestamp, and a dirty (pending local) row always wins regardless', async () => {
+  const { applyRemoteChanges, getDirty } = require('../src/db/sqlite');
+  const row = (collection: string, id: string) =>
+    shim.db.prepare('SELECT json, updated_at, dirty, deleted FROM docs WHERE collection = ? AND id = ?').get(collection, id) as
+      | { json: string; updated_at: number; dirty: number; deleted: number }
+      | undefined;
+  const seed = (collection: string, id: string, json: string, updatedAt: number, dirty: number) =>
+    shim.db
+      .prepare('INSERT INTO docs (collection, id, json, updated_at, dirty, deleted) VALUES (?, ?, ?, ?, ?, 0)')
+      .run(collection, id, json, updatedAt, dirty);
+
+  // 1. brand new doc from another device: applied even though nothing existed locally.
+  await applyRemoteChanges([{ collection: 'categories', id: 'rc_new', doc: { id: 'rc_new', name: 'Remote', sort: 99 }, updatedAt: 100 }]);
+  assert.equal(row('categories', 'rc_new')?.dirty, 0, 'written as not-dirty, so it is never pushed back out');
+  assert.deepEqual(JSON.parse(row('categories', 'rc_new')!.json), { id: 'rc_new', name: 'Remote', sort: 99 });
+
+  // 2. a newer remote update overwrites an older, already-synced (not dirty) local copy.
+  seed('categories', 'rc_a', JSON.stringify({ id: 'rc_a', name: 'Old', sort: 1 }), 100, 0);
+  await applyRemoteChanges([{ collection: 'categories', id: 'rc_a', doc: { id: 'rc_a', name: 'New', sort: 2 }, updatedAt: 200 }]);
+  assert.equal(JSON.parse(row('categories', 'rc_a')!.json).name, 'New', 'newer remote write applied');
+
+  // 3. an *older* remote update never overwrites a newer local copy - classic last-write-wins.
+  seed('categories', 'rc_b', JSON.stringify({ id: 'rc_b', name: 'Local-newer', sort: 1 }), 500, 0);
+  await applyRemoteChanges([{ collection: 'categories', id: 'rc_b', doc: { id: 'rc_b', name: 'Remote-older', sort: 2 }, updatedAt: 300 }]);
+  assert.equal(JSON.parse(row('categories', 'rc_b')!.json).name, 'Local-newer', 'older remote write is dropped');
+
+  // 4. a row with a *pending local edit* (dirty=1) is never clobbered by an incoming remote
+  // change, even one with a later timestamp - unsynced local work always wins.
+  seed('categories', 'rc_c', JSON.stringify({ id: 'rc_c', name: 'Local-pending', sort: 1 }), 100, 1);
+  await applyRemoteChanges([{ collection: 'categories', id: 'rc_c', doc: { id: 'rc_c', name: 'Remote-later', sort: 2 }, updatedAt: 9999 }]);
+  assert.equal(JSON.parse(row('categories', 'rc_c')!.json).name, 'Local-pending', 'dirty row is protected from remote overwrite');
+  const stillDirty = (await getDirty(1000)).find((r: any) => r.collection === 'categories' && r.id === 'rc_c');
+  assert.ok(stillDirty, 'the pending local edit is still queued to push, untouched');
+
+  // 5. a remote delete removes a non-dirty local row.
+  seed('categories', 'rc_d', JSON.stringify({ id: 'rc_d', name: 'ToDelete', sort: 1 }), 100, 0);
+  await applyRemoteChanges([{ collection: 'categories', id: 'rc_d', doc: null, updatedAt: 999 }]);
+  assert.equal(row('categories', 'rc_d')?.deleted, 1);
+
+  // 6. a remote delete does not remove a row with a pending local edit.
+  seed('categories', 'rc_e', JSON.stringify({ id: 'rc_e', name: 'KeepMe', sort: 1 }), 100, 1);
+  await applyRemoteChanges([{ collection: 'categories', id: 'rc_e', doc: null, updatedAt: 999 }]);
+  assert.equal(row('categories', 'rc_e')?.deleted, 0, 'dirty row survives a concurrent remote delete');
 });

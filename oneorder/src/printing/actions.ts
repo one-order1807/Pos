@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { consolidateLines, consolidateTicketItems, sessionTotals } from '../domain/bill';
 import { occasionLine } from '../domain/occasion';
 import { sessionLabel } from '../domain/ops';
-import type { OrderType, PaymentMethod, Session, State } from '../domain/types';
+import type { OrderType, PaymentMethod, PrinterRole, Session, State } from '../domain/types';
 import { useStore } from '../store/store';
 import { layoutCookBill, layoutCustomerBill, sampleBillData, sampleCookData, type BillData, type PrintBlock } from './layout';
 import { getPrinterSnapshot, printLines, subscribePrinter, type PrinterSnapshot } from './printer';
@@ -10,6 +10,22 @@ import { templateById } from './templates';
 
 export function usePrinter(): PrinterSnapshot {
   return useSyncExternalStore(subscribePrinter, getPrinterSnapshot, getPrinterSnapshot);
+}
+
+/**
+ * Which connected printer a Cook/Customer Bill should go to: a printer explicitly assigned this
+ * exact role, else one assigned 'both', else undefined (printLines then falls back to "whichever
+ * connected first", so a single-printer cafe with no role configured behaves exactly as before).
+ * Role assignment lives in Settings (app-level config); live connection state lives in printer.ts
+ * (hardware); this is where the two get resolved together.
+ */
+function resolvePrinterDeviceId(role: Exclude<PrinterRole, 'both'>): string | undefined {
+  const devices = useStore.getState().data.settings.main.printer.devices ?? [];
+  const connectedIds = new Set(getPrinterSnapshot().connections.filter((c) => c.status === 'connected').map((c) => c.id));
+  const exact = devices.find((d) => connectedIds.has(d.id) && d.role === role);
+  if (exact) return exact.id;
+  const both = devices.find((d) => connectedIds.has(d.id) && d.role === 'both');
+  return both?.id;
 }
 
 export const TYPE_LABEL: Record<OrderType, string> = {
@@ -69,10 +85,10 @@ export interface PrintOutcome {
   error?: string;
 }
 
-async function run(lines: PrintBlock[] | null): Promise<PrintOutcome> {
+async function run(lines: PrintBlock[] | null, deviceId?: string): Promise<PrintOutcome> {
   if (!lines) return { ok: false, error: 'Nothing to print.' };
   try {
-    await printLines(lines);
+    await printLines(lines, deviceId);
     return { ok: true };
   } catch (e: any) {
     return { ok: false, error: e?.message ?? 'Print failed.' };
@@ -80,7 +96,7 @@ async function run(lines: PrintBlock[] | null): Promise<PrintOutcome> {
 }
 
 export async function printCookTicket(ticketId: string): Promise<PrintOutcome> {
-  const r = await run(cookBillLines(useStore.getState().data, ticketId));
+  const r = await run(cookBillLines(useStore.getState().data, ticketId), resolvePrinterDeviceId('cook'));
   if (r.ok) useStore.getState().markTicketPrinted(ticketId);
   return r;
 }
@@ -103,14 +119,14 @@ export function cookRoundLines(state: State, sessionId: string, round: number | 
 }
 
 export async function printCookRound(sessionId: string, round: number | null): Promise<PrintOutcome> {
-  return run(cookRoundLines(useStore.getState().data, sessionId, round));
+  return run(cookRoundLines(useStore.getState().data, sessionId, round), resolvePrinterDeviceId('cook'));
 }
 
 export async function printCustomerBill(sessionId: string): Promise<PrintOutcome> {
   const state = useStore.getState().data;
   const s = state.sessions[sessionId];
   if (!s) return { ok: false, error: 'Order not found.' };
-  const r = await run(customerBillLines(state, s, Date.now()));
+  const r = await run(customerBillLines(state, s, Date.now()), resolvePrinterDeviceId('customer'));
   if (r.ok && s.status === 'open') useStore.getState().markBillPrinted(sessionId);
   return r;
 }
@@ -124,5 +140,5 @@ export function testLines(state: State, templateId: string, kind: 'customer' | '
 }
 
 export async function printTest(templateId: string, kind: 'customer' | 'cook'): Promise<PrintOutcome> {
-  return run(testLines(useStore.getState().data, templateId, kind));
+  return run(testLines(useStore.getState().data, templateId, kind), resolvePrinterDeviceId(kind));
 }

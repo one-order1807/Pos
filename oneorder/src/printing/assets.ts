@@ -8,7 +8,10 @@ import { fitLogo, monoToRasterAsset, renderQr } from './raster';
 // print templates, so nothing needs re-rasterizing per template at print time.
 const LOGO_MAX_WIDTH = 220;
 const LOGO_MAX_HEIGHT = 160;
-const QR_TARGET_WIDTH = 220;
+// Smaller than before (was 220) - a large QR is enough raster data to visibly stall a thermal
+// printer mid-print over slow BLE; see MIN_DOTS_PER_MODULE in raster.ts for the matching cut to
+// the per-module dot size, since this target alone stops mattering once that floor is hit.
+const QR_TARGET_WIDTH = 160;
 
 export async function rasterizeLogo(uri: string): Promise<RasterAsset> {
   let bytes: Uint8Array;

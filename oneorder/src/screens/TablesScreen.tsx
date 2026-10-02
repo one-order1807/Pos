@@ -243,9 +243,9 @@ export function TablesScreen() {
                       onPress={() => onTablePress(t)}
                       onMove={(x, y) => setDraft((d) => moveTableDraft(d!, t.id, x, y))}
                       onDelete={() => {
-                        const next = removeTableDraft(draft!, t.id, locked);
-                        if (next === draft) toast('A table with an active order cannot be removed.', 'error');
-                        else setDraft(next);
+                        const r = removeTableDraft(draft!, t.id, locked);
+                        if (r.error) toast(r.error, 'error');
+                        else setDraft(r.tables);
                       }}
                       setDragging={setDragging}
                     />

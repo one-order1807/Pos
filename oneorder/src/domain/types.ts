@@ -132,10 +132,22 @@ export interface BillSettings {
   fssaiNumber: string; // '' = not printed; presence of a value is the only switch
 }
 
+export type PrinterRole = 'both' | 'customer' | 'cook';
+
+export interface PrinterDevice {
+  id: string;
+  name: string;
+  role: PrinterRole;
+}
+
 export interface PrinterSettings {
   templateId: string;
-  deviceId: string;
-  deviceName: string;
+  // Remembered printers for this device to auto-reconnect to, each with a role: 'both' (default
+  // for a single printer - everything routes to it) or scoped to just Customer or Cook Bills once
+  // a second printer is assigned a specific job. BLE pairings are inherently per-device hardware,
+  // not something a second tablet could use even if this list syncs along with the rest of
+  // Settings - same as the deviceId/deviceName fields this replaces.
+  devices: PrinterDevice[];
 }
 
 export interface Settings {

@@ -541,10 +541,22 @@ export function renameTableDraft(tables: TableMap, id: string, label: string): T
   return { ...tables, [id]: { ...t, label: clean } };
 }
 
-export function removeTableDraft(tables: TableMap, id: string, locked: Set<string>): TableMap {
+export interface RemoveTableResult {
+  tables: TableMap;
+  error?: string;
+}
+
+export function removeTableDraft(tables: TableMap, id: string, locked: Set<string>): RemoveTableResult {
   const t = tables[id];
-  if (!t || locked.has(id) || t.members || t.mergedInto) return tables;
-  return withoutKey(tables, id);
+  if (!t) return { tables };
+  // Each of these silently looked like the same "active order" block before - a table that's
+  // simply merged into another (no order involved at all) got the exact same misleading message
+  // as one with a real open order, which is a plausible reason "delete" looked stuck on a table
+  // that was actually free.
+  if (t.mergedInto) return { tables, error: 'This table is part of a merge. Unmerge it first, then delete it.' };
+  if (t.members) return { tables, error: 'This is a merged table. Unmerge it first, then delete its tables individually.' };
+  if (locked.has(id)) return { tables, error: 'This table has an active order and cannot be removed.' };
+  return { tables: withoutKey(tables, id) };
 }
 
 export function mergeTablesDraft(

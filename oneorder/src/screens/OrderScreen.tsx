@@ -3,12 +3,38 @@ import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View, use
 import { formatDuration, formatMoney } from '../domain/money';
 import { openSessions, sessionLabel } from '../domain/ops';
 import type { MenuItem, OrderType, Session } from '../domain/types';
+import { usePrinter } from '../printing/actions';
 import { useStore } from '../store/store';
 import { Btn, Chip, DelayedConfirm, Dot, EmptyState, Icon, Modal, toast, useNow } from '../ui/components';
 import { colors, fonts, shadow } from '../ui/theme';
 import { ItemModal } from './ItemModal';
 import { OrderPanel } from './OrderPanel';
 import { TablePicker } from './TablePicker';
+
+const ROLE_SUFFIX: Record<string, string> = { customer: ' · Customer Bill', cook: ' · Cook Bill', both: '' };
+
+function PrinterStatusRow() {
+  const snap = usePrinter();
+  const devices = useStore((s) => s.data.settings.main.printer.devices ?? []);
+  if (devices.length === 0) return null;
+  return (
+    <View style={styles.printerRow}>
+      {devices.map((d) => {
+        const conn = snap.connections.find((c) => c.id === d.id);
+        const connected = conn?.status === 'connected';
+        return (
+          <View key={d.id} style={styles.printerChip}>
+            <Dot color={connected ? colors.green : conn?.status === 'connecting' ? colors.amber : colors.red} size={8} />
+            <Text style={styles.printerChipText} numberOfLines={1}>
+              {d.name}
+              {connected ? ROLE_SUFFIX[d.role] : ' · Disconnected'}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
 
 const PANEL_WIDTH = 380;
 
@@ -134,6 +160,7 @@ export function OrderScreen() {
           </Pressable>
         </ScrollView>
       </View>
+      <PrinterStatusRow />
 
       <View style={styles.body}>
         <View style={styles.left}>
@@ -289,6 +316,27 @@ export function OrderScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   tabBar: { height: 60, paddingLeft: 12, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.white, justifyContent: 'center' },
+  printerRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingTop: 6,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  printerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: colors.bg,
+    marginBottom: 6,
+  },
+  printerChipText: { fontFamily: fonts.medium, fontSize: 11, color: colors.textSoft, maxWidth: 180 },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',

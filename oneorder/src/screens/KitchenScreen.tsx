@@ -22,6 +22,10 @@ function urgency(ms: number): { color: string; bg: string; text: string } {
 export function KitchenScreen() {
   const data = useStore((s) => s.data);
   const reorder = useStore((s) => s.reorderPending);
+  const chefMode = useStore((s) => s.chefMode);
+  const enterChefMode = useStore((s) => s.enterChefMode);
+  const startTicket = useStore((s) => s.startTicket);
+  const markReady = useStore((s) => s.markReady);
   const now = useNow(10000);
   const { width } = useWindowDimensions();
   const stacked = width < 900;
@@ -62,6 +66,8 @@ export function KitchenScreen() {
           onReorder={reorder}
           onReprint={reprint}
           setDragging={setDragScroll}
+          chefMode={chefMode}
+          onStart={startTicket}
         />
       </Column>
       <Column title="Cooking" count={cooking.length} color={colors.coral} stacked={stacked}>
@@ -70,6 +76,7 @@ export function KitchenScreen() {
           <TicketCard key={t.id} t={t} now={now} baseTime={t.sentAt} timeLabel="Sent">
             <View style={styles.btnRow}>
               <Btn small label="Print" icon="printer" variant="secondary" onPress={() => reprint(t)} />
+              {chefMode ? <Btn small label="Mark Ready" icon="check" variant="success" onPress={() => markReady(t.id)} /> : null}
             </View>
           </TicketCard>
         ))}
@@ -85,7 +92,10 @@ export function KitchenScreen() {
 
   return (
     <View style={styles.root}>
-      <Text style={styles.title}>Kitchen</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>Kitchen</Text>
+        {!chefMode ? <Btn small label="Chef Mode" icon="shield" variant="secondary" onPress={enterChefMode} /> : null}
+      </View>
       {stacked ? (
         <ScrollView scrollEnabled={!dragScroll} contentContainerStyle={{ padding: 12, gap: 12 }}>
           {cols}
@@ -183,12 +193,16 @@ function PendingList({
   onReorder,
   onReprint,
   setDragging,
+  chefMode,
+  onStart,
 }: {
   tickets: Ticket[];
   now: number;
   onReorder: (id: string, toIndex: number) => void;
   onReprint: (t: Ticket) => void;
   setDragging: (d: boolean) => void;
+  chefMode: boolean;
+  onStart: (id: string) => void;
 }) {
   const heights = useRef<Record<string, number>>({});
   const [drag, setDrag] = useState<{ id: string; dy: number } | null>(null);
@@ -263,6 +277,7 @@ function PendingList({
                 <Btn small label="Up" icon="chevron-up" variant="secondary" disabled={i === 0} onPress={() => onReorder(t.id, i - 1)} />
                 <Btn small label="Down" icon="chevron-down" variant="secondary" disabled={i === tickets.length - 1} onPress={() => onReorder(t.id, i + 1)} />
                 <Btn small label="Print" icon="printer" variant="secondary" onPress={() => onReprint(t)} />
+                {chefMode ? <Btn small label="Start Cooking" icon="play" variant="success" onPress={() => onStart(t.id)} /> : null}
               </View>
             </TicketCard>
           </View>
@@ -274,7 +289,8 @@ function PendingList({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  title: { fontFamily: fonts.heading, fontSize: 34, color: colors.text, paddingHorizontal: 14, paddingTop: 10 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingTop: 10, gap: 8 },
+  title: { fontFamily: fonts.heading, fontSize: 34, color: colors.text },
   colsRow: { flex: 1, flexDirection: 'row', padding: 12, gap: 12 },
   col: { backgroundColor: colors.muted, borderRadius: 14, overflow: 'hidden' },
   colHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderBottomWidth: 3 },

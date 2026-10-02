@@ -1,0 +1,60 @@
+# Changelog
+
+One short entry per release: what changed, what was fixed, and the version it shipped in. This is
+the answer to "what changed, is this done, what's in this build" going forward — keep it updated
+every round rather than reconstructing it from chat history later.
+
+## v1.3.0 — 2026-10-02 (Round 6)
+
+- Fixed: QR code on printed bills is smaller (less raster data sent to the printer, which was
+  visibly stalling mid-print on larger QR codes).
+- Fixed: the bill footer printed "?" instead of "x" between the café name and ONEORDER - thermal
+  printers only support a legacy ASCII-ish character set, so the separator is now a plain "x" in
+  everything sent to the printer (on-screen text is unaffected).
+- Added: support for multiple printers connected at once, each with its own real connection status
+  shown in the Order tab, and a Dev Mode role assignment (which printer gets the Cook Bill vs. the
+  Customer Bill).
+- Added: real-time sync between devices via Firestore listeners (previously push-only, with no way
+  for a second device to see another device's changes without restarting the app). Conflict
+  resolution is last-write-wins by timestamp - a real, named limitation, not a full CRDT system.
+  Needs `firestore.rules` applied via the Firebase console before going near real customer data.
+- Added: Chef Mode - a restricted, password-gated view (Kitchen + printer connection only) for
+  running this same app on a second tablet in the kitchen, with Start Cooking / Mark Ready controls
+  that live-update table status on every connected device (depends on the real-time sync above).
+- Fixed: a wide per-unit price could overflow the Rate column and misalign the line after it.
+- Fixed: deleting a table that's merged into another table showed a misleading "has an active
+  order" error - it now says it's part of a merge and needs unmerging first.
+- Added: this changelog.
+
+## v1.2.1 — 2026-10-02
+
+- Fixed the actual cause of the recurring bill-scroll bug: `Modal` was unconditionally wrapping its
+  content in its own `ScrollView`, so the bill preview's own scroll container was always nested
+  inside a second one - same-axis nested ScrollViews are unreliable on Android regardless of
+  `nestedScrollEnabled`. Every previous attempt had only touched the inner component and missed
+  this outer wrapper.
+- Bill auto-scroll-to-bottom is now a custom-duration eased animation (slow and smooth) instead of
+  the native `scrollToEnd`, which gave no control over speed and read as an abrupt jump.
+- Fixed a real overflow bug in the Rate column added in v1.1.0: it used a fixed width while the
+  Amount column was already sized from the real data - a wide unit price could overflow the line
+  and misalign every column after it.
+
+## v1.2.0 — 2026-10-01
+
+- New brand mark (the "O1" monogram) across the Splash screen, the app's top bar, the floating
+  bubble, and all app icon assets.
+
+## v1.1.0 — 2026-10-01 (Round 5)
+
+- Combined Cook+Customer Bill toggle is now a true single tap (prints both, records payment as
+  Cash, closes the order) with table selection skipped, matching Table Mode off.
+- Customer Bill form suggests matching existing customers while typing a name, with an explicit
+  confirmation when a name matches but the phone doesn't.
+- Birthday/Anniversary bill line is generic now, no customer name on the printed line.
+- Removed "Cloud Build" from every printed bill footer.
+- Users tab: tapping a row opens visit history instead of an inline edit form.
+- Bill templates print a Rate column (Item / Qty / Rate / Amount), not just quantity and amount.
+- Dashboard: added a calendar date/range picker alongside the existing presets.
+- Dev Mode: optional FSSAI number field, printed only when set.
+- GST rebuilt as a multi-line type + percentage list (SGST/CGST etc.) instead of one flat rate.
+- App version shown in the Splash screen and the top bar, not just Dev Mode.

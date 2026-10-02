@@ -1,6 +1,6 @@
 import NetInfo from '@react-native-community/netinfo';
 import { useSyncExternalStore } from 'react';
-import { dirtyCount, getDirty, markSynced } from '../db/sqlite';
+import { applyRemoteChanges, dirtyCount, getDirty, markSynced, type RemoteChange } from '../db/sqlite';
 import type { State } from '../domain/types';
 import { activeBackend } from './active';
 
@@ -102,6 +102,16 @@ export function scheduleSync(delayMs = 3000) {
   }, delayMs);
 }
 
+// store.ts registers here (via onRemoteChange) to merge incoming docs into the live in-memory
+// state the moment they arrive - kept as a plain listener set, not a direct import of store.ts,
+// so this module and store.ts (which already imports from here) don't import each other.
+const remoteChangeListeners = new Set<(changes: RemoteChange[]) => void>();
+
+export function onRemoteChange(cb: (changes: RemoteChange[]) => void): () => void {
+  remoteChangeListeners.add(cb);
+  return () => remoteChangeListeners.delete(cb);
+}
+
 export function startSync() {
   if (started) return;
   started = true;
@@ -113,4 +123,9 @@ export function startSync() {
   });
   setInterval(() => scheduleSync(0), 30000);
   scheduleSync(1500);
+  activeBackend.subscribe((changes) => {
+    applyRemoteChanges(changes)
+      .then(() => remoteChangeListeners.forEach((cb) => cb(changes)))
+      .catch((e) => setStatus({ lastError: String(e?.message ?? e) }));
+  });
 }

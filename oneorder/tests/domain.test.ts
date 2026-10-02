@@ -249,12 +249,23 @@ test('merge guards: locked tables cannot merge/remove; unmerge works', () => {
   const locked = ops.lockedTableIds(s);
   assert.ok(locked.has('tbl_1'));
   assert.ok(ops.mergeTablesDraft(s.tables, ['tbl_1', 'tbl_2'], locked).error);
-  assert.equal(ops.removeTableDraft(s.tables, 'tbl_1', locked), s.tables);
+  const blockedRemove = ops.removeTableDraft(s.tables, 'tbl_1', locked);
+  assert.equal(blockedRemove.tables, s.tables);
+  assert.match(blockedRemove.error ?? '', /active order/);
   assert.ok(ops.mergeTablesDraft(s.tables, ['tbl_2'], locked).error);
   const m = ops.mergeTablesDraft(s.tables, ['tbl_2', 'tbl_3'], locked);
   const um = ops.unmergeTableDraft(m.tables, m.mergedId!, locked);
   assert.equal(Object.keys(um.tables).length, 8);
-  assert.equal(ops.validateTables(s, ops.removeTableDraft(s.tables, 'tbl_4', locked)), null);
+  assert.equal(ops.validateTables(s, ops.removeTableDraft(s.tables, 'tbl_4', locked).tables), null);
+  // A merged-into-another table is blocked for an entirely different reason than an active order -
+  // each must get its own, non-misleading error message.
+  const merged = ops.mergeTablesDraft(s.tables, ['tbl_5', 'tbl_6'], locked);
+  const removeSubTable = ops.removeTableDraft(merged.tables, 'tbl_5', locked);
+  assert.equal(removeSubTable.tables, merged.tables);
+  assert.match(removeSubTable.error ?? '', /part of a merge/);
+  const removeMergedTable = ops.removeTableDraft(merged.tables, merged.mergedId!, locked);
+  assert.equal(removeMergedTable.tables, merged.tables);
+  assert.match(removeMergedTable.error ?? '', /merged table/);
   const bad = { ...s.tables };
   delete bad.tbl_1;
   assert.ok(ops.validateTables(s, bad));

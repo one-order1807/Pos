@@ -170,7 +170,10 @@ function footerBlocks(t: PrintTemplate, bill: BillSettings): PrintBlock[] {
   const qr = rasterAssetToPrintImage(bill.qrRaster);
   if (qr) out.push({ ...qr, align: 'center' });
   const cafeName = bill.name.trim();
-  const brandFooter = cafeName && cafeName.toUpperCase() !== 'ONEORDER' ? `${cafeName} · ONEORDER` : 'ONEORDER';
+  // Printers only support a legacy ASCII-ish character set (see toPrinterAscii in escpos.ts) - a
+  // middle dot or multiplication sign here would print as "?" on real hardware, even though it
+  // renders fine on screen. Plain "x" is the printed-safe equivalent.
+  const brandFooter = cafeName && cafeName.toUpperCase() !== 'ONEORDER' ? `${cafeName} x ONEORDER` : 'ONEORDER';
   out.push({ text: brandFooter, align: 'center', bold: true, brand: true });
   return out;
 }

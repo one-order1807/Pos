@@ -21,6 +21,13 @@ export async function openDb(): Promise<SQLite.SQLiteDatabase> {
       PRIMARY KEY (collection, id)
     );
     CREATE INDEX IF NOT EXISTS docs_dirty ON docs (dirty);
+    -- Per-device settings that must never sync (Chef Mode, for one - the kitchen tablet being in
+    -- Chef Mode must never flip into Chef Mode on every other device sharing this store). A
+    -- separate table, deliberately outside the synced "docs" table and its push/pull/listener path.
+    CREATE TABLE IF NOT EXISTS device_prefs (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
   db = d;
   return d;
@@ -139,10 +146,82 @@ export function markSynced(rows: DirtyRow[]): Promise<void> {
   });
 }
 
+export interface RemoteChange {
+  collection: CollectionName;
+  id: string;
+  doc: unknown | null;
+  updatedAt: number;
+}
+
+/**
+ * Writes changes that arrived from another device via the cloud listener - the counterpart to
+ * writeChanges() for locally-originated edits. Two things must differ from writeChanges(), or a
+ * remote change would loop straight back out to every other device:
+ *  - written with dirty = 0, so the push loop never re-sends it to Firestore
+ *  - only applied if the local row isn't itself dirty (a pending local edit always wins over an
+ *    incoming remote one - local work in flight is never silently clobbered) and, for an update,
+ *    only if the incoming updatedAt is actually newer than what's already here. This is a plain
+ *    last-write-wins by wall-clock timestamp, not a CRDT - two devices editing the same document
+ *    within the same sync window can still have one legitimately overwrite the other. A delete has
+ *    no comparable prior timestamp (Firestore's deleteDoc carries no data), so it's applied
+ *    whenever the local row isn't dirty, full stop.
+ * Both conditions are enforced in the UPSERT's WHERE clause so the check-and-write is one atomic
+ * statement, not a separate read-then-maybe-write race.
+ */
+export function applyRemoteChanges(changes: RemoteChange[]): Promise<void> {
+  if (changes.length === 0) return Promise.resolve();
+  return serialized(async () => {
+    const d = await openDb();
+    await d.withTransactionAsync(async () => {
+      for (const c of changes) {
+        if (c.doc === null) {
+          await d.runAsync(
+            `INSERT INTO docs (collection, id, json, updated_at, dirty, deleted) VALUES (?, ?, '{}', ?, 0, 1)
+             ON CONFLICT(collection, id) DO UPDATE SET json = '{}', updated_at = excluded.updated_at, dirty = 0, deleted = 1
+             WHERE docs.dirty = 0`,
+            c.collection,
+            c.id,
+            c.updatedAt,
+          );
+        } else {
+          await d.runAsync(
+            `INSERT INTO docs (collection, id, json, updated_at, dirty, deleted) VALUES (?, ?, ?, ?, 0, 0)
+             ON CONFLICT(collection, id) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at, dirty = 0, deleted = 0
+             WHERE docs.dirty = 0 AND docs.updated_at < excluded.updated_at`,
+            c.collection,
+            c.id,
+            JSON.stringify(c.doc),
+            c.updatedAt,
+          );
+        }
+      }
+    });
+  });
+}
+
 export function dirtyCount(): Promise<number> {
   return serialized(async () => {
     const d = await openDb();
     const row = await d.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM docs WHERE dirty = 1');
     return row?.n ?? 0;
+  });
+}
+
+export function getDevicePref(key: string): Promise<string | null> {
+  return serialized(async () => {
+    const d = await openDb();
+    const row = await d.getFirstAsync<{ value: string }>('SELECT value FROM device_prefs WHERE key = ?', key);
+    return row?.value ?? null;
+  });
+}
+
+export function setDevicePref(key: string, value: string): Promise<void> {
+  return serialized(async () => {
+    const d = await openDb();
+    await d.runAsync(
+      `INSERT INTO device_prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      key,
+      value,
+    );
   });
 }

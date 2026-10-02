@@ -1,12 +1,13 @@
 import { create } from 'zustand';
-import { loadState, writeChanges } from '../db/sqlite';
+import { getDevicePref, loadState, setDevicePref, writeChanges } from '../db/sqlite';
 import { applyBackup, importMenu, mergeBackup, parseBackup, type BackupFile, type MenuImportResult } from '../domain/backup';
 import { allDocs, diffStates, type DocChange } from '../domain/diff';
 import { makeTapGuard } from '../domain/guard';
 import * as ops from '../domain/ops';
 import { hashPin } from '../domain/sha256';
-import { fetchCloudState, scheduleSync, startSync } from '../sync/engine';
-import { defaultSettings, emptyState, seedState } from '../domain/seed';
+import { fetchCloudState, onRemoteChange, scheduleSync, startSync } from '../sync/engine';
+import type { RemoteChange } from '../db/sqlite';
+import { CHEF_MODE_EXIT_PIN, defaultSettings, emptyState, seedState } from '../domain/seed';
 import type {
   BillSettings,
   Category,
@@ -24,6 +25,7 @@ export type TabKey = 'order' | 'tables' | 'kitchen' | 'menu' | 'users' | 'dashbo
 
 const UNLOCK_MS = 10 * 60 * 1000;
 const tapGuard = makeTapGuard(150);
+const CHEF_MODE_PREF_KEY = 'chefMode';
 
 interface StoreShape {
   ready: boolean;
@@ -33,10 +35,15 @@ interface StoreShape {
   tab: TabKey;
   activeSessionId: string | null;
   unlockedUntil: number;
+  /** Per-device, never synced - see db/sqlite.ts's device_prefs table. */
+  chefMode: boolean;
   init: () => Promise<void>;
   retrySave: () => void;
   setTab: (t: TabKey) => void;
   setActive: (id: string | null) => void;
+  enterChefMode: () => void;
+  /** Returns false (does nothing) on a wrong PIN. */
+  exitChefMode: (pin: string) => boolean;
 
   newOrder: (type: OrderType) => string;
   openTable: (tableId: string) => { sessionId: string; redirected: boolean };
@@ -137,9 +144,12 @@ export const useStore = create<StoreShape>((set, get) => {
     tab: 'order',
     activeSessionId: null,
     unlockedUntil: 0,
+    chefMode: false,
 
     async init() {
       try {
+        const chefModePref = await getDevicePref(CHEF_MODE_PREF_KEY);
+        if (chefModePref === '1') set({ chefMode: true });
         const { state, count } = await loadState();
         let data = state;
         if (count === 0 || !data.settings.main) {
@@ -156,6 +166,23 @@ export const useStore = create<StoreShape>((set, get) => {
         }
         const open = ops.openSessions(data);
         set({ data, ready: true, activeSessionId: open.length ? open[0].id : null, loadError: null });
+        // Merges a doc that just arrived from another device straight into live state - a direct
+        // set(), not commit(), since commit()'s diffStates()+enqueue() is for locally-originated
+        // edits and would just push this same doc right back out to every other device.
+        // applyRemoteChanges() (called by sync/engine before this fires) already wrote it to local
+        // SQLite with dirty=0, so there's nothing left to persist here.
+        onRemoteChange((changes: RemoteChange[]) => {
+          set((s) => {
+            let next = s.data;
+            for (const c of changes) {
+              const rec = { ...(next[c.collection] as Record<string, unknown>) };
+              if (c.doc === null) delete rec[c.id];
+              else rec[c.id] = c.doc;
+              next = { ...next, [c.collection]: rec };
+            }
+            return { data: next };
+          });
+        });
         startSync();
       } catch (e: any) {
         set({ loadError: String(e?.message ?? e), ready: false });
@@ -172,6 +199,18 @@ export const useStore = create<StoreShape>((set, get) => {
 
     setActive(id) {
       set({ activeSessionId: id });
+    },
+
+    enterChefMode() {
+      set({ chefMode: true, tab: 'kitchen' });
+      setDevicePref(CHEF_MODE_PREF_KEY, '1').catch(() => {});
+    },
+
+    exitChefMode(pin) {
+      if (pin !== CHEF_MODE_EXIT_PIN) return false;
+      set({ chefMode: false });
+      setDevicePref(CHEF_MODE_PREF_KEY, '0').catch(() => {});
+      return true;
     },
 
     newOrder(type) {

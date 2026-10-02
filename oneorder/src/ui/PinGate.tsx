@@ -9,11 +9,21 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'back'];
 export function PinGate({
   visible,
   title = 'Enter 6-digit PIN',
+  pinLength = 6,
+  onVerify,
   onClose,
   onUnlocked,
 }: {
   visible: boolean;
   title?: string;
+  /** Defaults to 6, matching the Dev Mode PIN this was originally built for. */
+  pinLength?: number;
+  /**
+   * Defaults to the Dev Mode PIN/lockout check (store's verifyPin). Pass this to reuse the same
+   * keypad UI for a different, simpler fixed-code check (e.g. Chef Mode's exit code) without
+   * touching Dev Mode's brute-force lockout logic at all.
+   */
+  onVerify?: (pin: string) => boolean;
   onClose: () => void;
   onUnlocked: () => void;
 }) {
@@ -35,10 +45,20 @@ export function PinGate({
       return;
     }
     if (!k) return;
-    const next = (pin + k).slice(0, 6);
+    const next = (pin + k).slice(0, pinLength);
     setPin(next);
     setError('');
-    if (next.length === 6) {
+    if (next.length === pinLength) {
+      if (onVerify) {
+        if (onVerify(next)) {
+          setPin('');
+          onUnlocked();
+        } else {
+          setPin('');
+          setError('Incorrect code.');
+        }
+        return;
+      }
       const r = verifyPin(next);
       if (r.ok) {
         setPin('');
@@ -57,7 +77,7 @@ export function PinGate({
   return (
     <Modal visible={visible} onClose={onClose} title={title} width={360}>
       <View style={styles.dots}>
-        {[0, 1, 2, 3, 4, 5].map((i) => (
+        {Array.from({ length: pinLength }, (_, i) => (
           <View key={i} style={[styles.dot, i < pin.length && styles.dotOn]} />
         ))}
       </View>

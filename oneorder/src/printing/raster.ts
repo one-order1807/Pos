@@ -83,7 +83,11 @@ export function fitLogo(img: DecodedImage, maxWidth: number, maxHeight: number):
 }
 
 const QUIET_ZONE_MODULES = 4;
-const MIN_DOTS_PER_MODULE = 6;
+// Thermal printers push image data far slower than text - a large QR is enough raw pixel data to
+// visibly stall the printer mid-bill. 5 dots/module is a deliberately modest cut from 6 (not the
+// lowest that could still scan) to keep the QR reliably scannable; QR_TARGET_WIDTH in assets.ts is
+// cut proportionally too.
+const MIN_DOTS_PER_MODULE = 5;
 
 // Renders text as a QR with a module size chosen so the whole code lands near targetWidth dots
 // (falling back to the minimum scannable module size for very dense codes), plus the quiet-zone

@@ -76,7 +76,9 @@ test('fitLogo: scales down preserving aspect ratio, never upscales', () => {
 test('QR: has a quiet zone border, contains dark modules, and differs by content', () => {
   const a = renderQr('https://example.com/review-a', 200);
   const b = renderQr('https://example.com/review-b', 200);
-  assert.ok(a.width >= 190 && a.width <= 260, `width ${a.width} near target`);
+  // Round 6: MIN_DOTS_PER_MODULE dropped from 6 to 5 (a large QR was slow enough raster data to
+  // visibly stall the printer), so the actual output lands a bit under the 200 target now.
+  assert.ok(a.width >= 150 && a.width <= 260, `width ${a.width} near target`);
   const quiet = Math.round((a.width / 37) * 4); // ~4-module border for a typical module count
   let anyDark = false;
   for (let y = 0; y < a.height; y++) {

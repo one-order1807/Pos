@@ -3,11 +3,14 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { printTest, testLines, usePrinter } from '../printing/actions';
 import { connectTo, disconnectPrinter, startScan, stopScan, verifyConnection } from '../printing/printer';
 import { templateById, TEMPLATES } from '../printing/templates';
+import type { PrinterRole } from '../domain/types';
 import { useStore } from '../store/store';
 import { Btn, Card, Chip, Dot, Modal, toast } from '../ui/components';
 import { AutoScrollView } from '../ui/AutoScrollView';
 import { Receipt } from '../ui/Receipt';
 import { colors, fonts } from '../ui/theme';
+
+const ROLE_LABEL: Record<PrinterRole, string> = { both: 'Both bills', customer: 'Customer Bill only', cook: 'Cook Bill only' };
 
 export function printerStatusInfo(status: ReturnType<typeof usePrinter>['status']): { label: string; color: string } {
   switch (status) {
@@ -28,6 +31,7 @@ export function PrinterPanel({ active = true }: { active?: boolean }) {
   const snap = usePrinter();
   const setPrinterSettings = useStore((s) => s.setPrinterSettings);
   const templateId = useStore((s) => s.data.settings.main.printer.templateId);
+  const devices = useStore((s) => s.data.settings.main.printer.devices ?? []);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -42,13 +46,20 @@ export function PrinterPanel({ active = true }: { active?: boolean }) {
 
   const info = printerStatusInfo(snap.status);
   const scanning = snap.status === 'scanning';
+  const connectedIds = new Set(snap.connections.map((c) => c.id));
 
   async function connect(id: string, name: string) {
     const ok = await connectTo(id, name);
     if (ok) {
-      setPrinterSettings({ deviceId: id, deviceName: name });
+      if (!devices.some((d) => d.id === id)) {
+        setPrinterSettings({ devices: [...devices, { id, name, role: 'both' }] });
+      }
       toast(`Connected to ${name}.`, 'success');
     }
+  }
+
+  function setRole(id: string, role: PrinterRole) {
+    setPrinterSettings({ devices: devices.map((d) => (d.id === id ? { ...d, role } : d)) });
   }
 
   async function test(kind: 'customer' | 'cook') {
@@ -65,19 +76,48 @@ export function PrinterPanel({ active = true }: { active?: boolean }) {
       <View style={styles.statusRow}>
         <Dot color={info.color} size={14} />
         <Text style={styles.statusLabel}>{info.label}</Text>
-        {snap.device ? <Text style={styles.device}>{snap.device.name}</Text> : null}
+        <Text style={styles.device}>
+          {snap.connections.length === 0
+            ? ''
+            : snap.connections.length === 1
+              ? snap.connections[0].name
+              : `${snap.connections.length} printers`}
+        </Text>
       </View>
       <Text style={styles.message}>{snap.message}</Text>
+
+      {snap.connections.length > 0 ? (
+        <View style={{ marginBottom: 10 }}>
+          {snap.connections.map((c) => {
+            const known = devices.find((d) => d.id === c.id);
+            return (
+              <View key={c.id} style={styles.connRow}>
+                <View style={styles.connTop}>
+                  <Dot color={c.status === 'connected' ? colors.green : colors.amber} size={10} />
+                  <Text style={[styles.devName, { flex: 1 }]} numberOfLines={1}>
+                    {c.name}
+                  </Text>
+                  <Btn small icon="x" variant="secondary" onPress={() => disconnectPrinter(c.id)} />
+                </View>
+                {c.status === 'connected' ? (
+                  <View style={styles.roleRow}>
+                    {(['both', 'customer', 'cook'] as PrinterRole[]).map((r) => (
+                      <Chip key={r} label={ROLE_LABEL[r]} active={(known?.role ?? 'both') === r} onPress={() => setRole(c.id, r)} />
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
 
       <View style={styles.btnRow}>
         {scanning ? (
           <Btn small label="Stop scan" icon="square" variant="secondary" onPress={stopScan} />
         ) : (
-          <Btn small label="Scan for printers" icon="bluetooth" onPress={() => startScan()} disabled={snap.status === 'unsupported' || snap.status === 'connecting'} />
+          <Btn small label="Scan for printers" icon="bluetooth" onPress={() => startScan()} disabled={snap.status === 'unsupported'} />
         )}
-        {snap.status === 'connected' ? (
-          <Btn small label="Disconnect" icon="x" variant="secondary" onPress={() => disconnectPrinter()} />
-        ) : null}
         <Btn small label="Print Test" icon="printer" variant="secondary" onPress={() => test('customer')} disabled={busy} />
         <Btn small label="Test Cook Bill" icon="printer" variant="secondary" onPress={() => test('cook')} disabled={busy} />
       </View>
@@ -85,7 +125,7 @@ export function PrinterPanel({ active = true }: { active?: boolean }) {
       {snap.devices.length > 0 ? (
         <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
           {snap.devices.map((d) => {
-            const isCurrent = snap.device?.id === d.id;
+            const isConnected = connectedIds.has(d.id);
             return (
               <View key={d.id} style={styles.devRow}>
                 <View style={{ flex: 1 }}>
@@ -95,10 +135,10 @@ export function PrinterPanel({ active = true }: { active?: boolean }) {
                     {d.rssi !== null ? ` · ${d.rssi} dBm` : ''}
                   </Text>
                 </View>
-                {isCurrent ? (
+                {isConnected ? (
                   <Text style={styles.connectedTag}>Connected</Text>
                 ) : (
-                  <Btn small label="Connect" onPress={() => connect(d.id, d.name)} disabled={snap.status === 'connecting'} />
+                  <Btn small label="Connect" onPress={() => connect(d.id, d.name)} />
                 )}
               </View>
             );
@@ -197,6 +237,9 @@ const styles = StyleSheet.create({
   statusLabel: { fontFamily: fonts.semibold, fontSize: 18, color: colors.text },
   device: { fontFamily: fonts.body, fontSize: 13, color: colors.textSoft },
   message: { fontFamily: fonts.body, fontSize: 13, color: colors.textSoft, marginVertical: 8, lineHeight: 19 },
+  connRow: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 8, marginBottom: 8 },
+  connTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  roleRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 },
   btnRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   devRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56, borderBottomWidth: 1, borderBottomColor: colors.muted },
   devName: { fontFamily: fonts.semibold, fontSize: 15, color: colors.text },

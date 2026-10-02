@@ -1,0 +1,30 @@
+rules_version = '2';
+
+// ONEORDER Firestore security rules.
+//
+// Apply these via the Firebase console (Firestore Database > Rules tab > paste and Publish) or
+// `firebase deploy --only firestore:rules` if the Firebase CLI is set up - this file isn't
+// deployed automatically by anything in this repo.
+//
+// HONEST SCOPE NOTE: the app authenticates every device with signInAnonymously() (see
+// src/sync/firebaseBackend.ts) and has no concept of "which cafe does this anonymous user belong
+// to" - there's no custom claim or per-user store mapping today. These rules require auth and do
+// basic shape checks, which is real protection against the database being wide open to anyone on
+// the internet, but they do NOT isolate one cafe's data from another's: any authenticated
+// (anonymous) client can still read/write any storeId. True per-tenant isolation needs an auth
+// model change (custom claims or per-store sign-in tokens mapping a uid to exactly one storeId) -
+// that's a real piece of future work, not something these rules alone can provide.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /stores/{storeId}/{collectionName}/{docId} {
+      allow read, write: if request.auth != null
+        && collectionName in ['categories', 'items', 'tables', 'sessions', 'tickets', 'customers', 'settings']
+        && docId is string && docId.size() > 0 && docId.size() < 200
+        // Defense in depth alongside the client's own stripSecrets()/cleanForCloud(): the PIN
+        // hash/salt must never reach Firestore even if a future client build forgets to strip it.
+        && !('pinHash' in request.resource.data)
+        && !('pinSalt' in request.resource.data);
+    }
+    // Everything else is denied by Firestore's default implicit deny.
+  }
+}

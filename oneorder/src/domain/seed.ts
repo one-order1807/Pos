@@ -2,6 +2,10 @@ import { hashPin, makeSalt } from './sha256';
 import type { Category, MenuItem, Settings, State, TableDef } from './types';
 
 export const DEFAULT_DEV_PIN = '180704';
+// Short-term fixed code to exit Chef Mode (intentionally separate from the Dev Mode PIN above) -
+// see Round 6's Chef Mode spec. Not meant to be a strong secret, just enough friction that kitchen
+// staff don't wander out of the restricted view by accident.
+export const CHEF_MODE_EXIT_PIN = '1807';
 
 export function defaultSettings(): Settings {
   const salt = makeSalt();
@@ -22,7 +26,7 @@ export function defaultSettings(): Settings {
       showOccasionGreeting: false,
       fssaiNumber: '',
     },
-    printer: { templateId: 't2', deviceId: '', deviceName: '' },
+    printer: { templateId: 't2', devices: [] },
     pinHash: hashPin(DEFAULT_DEV_PIN, salt),
     pinSalt: salt,
     orderCounter: { date: '', n: 0 },

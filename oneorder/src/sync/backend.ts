@@ -1,4 +1,4 @@
-import type { DirtyRow } from '../db/sqlite';
+import type { DirtyRow, RemoteChange } from '../db/sqlite';
 import type { State } from '../domain/types';
 
 // The app only ever talks to this interface. Phase 1 implements it with Firebase.
@@ -9,4 +9,9 @@ export interface CloudBackend {
   readonly configured: boolean;
   push(rows: DirtyRow[]): Promise<void>;
   pullAll(): Promise<State | null>;
+  /** Live updates from other devices, one listener per collection under the hood. Returns an
+   * unsubscribe function. Fires once up front with every existing doc (same as a fresh pullAll),
+   * then again on every future change - callers merge via applyRemoteChanges, which is a safe
+   * no-op for anything already up to date. */
+  subscribe(onChange: (changes: RemoteChange[]) => void): () => void;
 }

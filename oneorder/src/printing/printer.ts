@@ -2,6 +2,9 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import { encodeEscPos, toBase64 } from './escpos';
 import type { PrintBlock } from './layout';
 
+// Worst/most-relevant single status, kept for simple single-dot UI (Shell's top-bar pill,
+// printerStatusInfo). Per-printer detail lives in PrinterSnapshot.connections instead - this
+// module supports any number of simultaneous BLE connections, not just one.
 export type PrinterStatus =
   | 'unsupported'
   | 'bluetooth-off'
@@ -16,11 +19,18 @@ export interface FoundDevice {
   rssi: number | null;
 }
 
+export interface ConnectedPrinter {
+  id: string;
+  name: string;
+  status: 'connecting' | 'connected';
+  message: string;
+}
+
 export interface PrinterSnapshot {
   status: PrinterStatus;
   message: string;
   devices: FoundDevice[];
-  device: { id: string; name: string } | null;
+  connections: ConnectedPrinter[];
 }
 
 declare const require: (name: string) => any;
@@ -42,19 +52,46 @@ let snapshot: PrinterSnapshot = {
   status: 'disconnected',
   message: 'No printer connected.',
   devices: [],
-  device: null,
+  connections: [],
 };
 const listeners = new Set<() => void>();
 let manager: any = null;
 let managerTried = false;
-let connectedDevice: any = null;
-let writeChar: any = null;
-let disconnectSub: any = null;
+// Live BLE handles per connected device id - everything the module needs to write to or tear down
+// that specific connection. snapshot.connections is the public, serializable mirror of this map's
+// keys (id/name/status/message only, no live SDK objects).
+const conns = new Map<string, { dev: any; writeChar: any; disconnectSub: any }>();
 let scanTimer: ReturnType<typeof setTimeout> | null = null;
+let scanning = false;
+// Set fresh by every bluetoothOn() check (not derived from the previous snapshot) - deriving it
+// from stale `snapshot.status` would make 'bluetooth-off' stick forever once set, even after
+// Bluetooth is switched back on, since nothing would ever re-clear it.
+let bluetoothOff = false;
 
-function emit(patch: Partial<PrinterSnapshot>) {
+function topStatus(): PrinterStatus {
+  if (!manager) return 'unsupported';
+  if (scanning) return 'scanning';
+  if (bluetoothOff) return 'bluetooth-off';
+  if (snapshot.connections.some((c) => c.status === 'connecting')) return 'connecting';
+  if (snapshot.connections.length > 0) return 'connected';
+  return 'disconnected';
+}
+
+function emit(patch: Partial<PrinterSnapshot> = {}) {
   snapshot = { ...snapshot, ...patch };
+  snapshot = { ...snapshot, status: topStatus() };
   listeners.forEach((l) => l());
+}
+
+function upsertConnection(entry: ConnectedPrinter) {
+  const next = snapshot.connections.filter((c) => c.id !== entry.id);
+  next.push(entry);
+  emit({ connections: next });
+}
+
+function dropConnection(id: string, message?: string) {
+  conns.delete(id);
+  emit({ connections: snapshot.connections.filter((c) => c.id !== id), ...(message ? { message } : {}) });
 }
 
 export function getPrinterSnapshot(): PrinterSnapshot {
@@ -78,7 +115,7 @@ function getManager(): any | null {
   } catch {
     manager = null;
   }
-  if (!manager) emit({ status: 'unsupported', message: UNSUPPORTED_MESSAGE });
+  if (!manager) emit({ message: UNSUPPORTED_MESSAGE });
   return manager;
 }
 
@@ -103,41 +140,36 @@ async function ensurePermissions(request: boolean): Promise<boolean> {
 
 async function bluetoothOn(m: any): Promise<boolean> {
   try {
-    return (await m.state()) === 'PoweredOn';
+    const on = (await m.state()) === 'PoweredOn';
+    bluetoothOff = !on;
+    return on;
   } catch {
     manager = null;
-    emit({ status: 'unsupported', message: UNSUPPORTED_MESSAGE, device: null });
+    bluetoothOff = false;
+    emit({ message: UNSUPPORTED_MESSAGE });
     return false;
   }
-}
-
-function clearConnection() {
-  try {
-    disconnectSub?.remove?.();
-  } catch {}
-  disconnectSub = null;
-  connectedDevice = null;
-  writeChar = null;
 }
 
 export async function startScan(durationMs = 10000): Promise<void> {
   const m = getManager();
   if (!m) return;
   if (!(await ensurePermissions(true))) {
-    emit({ status: connectedDevice ? 'connected' : 'disconnected', message: 'Bluetooth permission was denied. Allow it in system settings to scan.' });
+    emit({ message: 'Bluetooth permission was denied. Allow it in system settings to scan.' });
     return;
   }
   if (!(await bluetoothOn(m))) {
-    if (snapshot.status !== 'unsupported') emit({ status: 'bluetooth-off', message: 'Bluetooth is turned off. Turn it on and scan again.' });
+    emit({ message: 'Bluetooth is turned off. Turn it on and scan again.' });
     return;
   }
   stopScan();
-  emit({ status: 'scanning', message: 'Scanning for Bluetooth printers...', devices: [] });
+  scanning = true;
+  emit({ message: 'Scanning for Bluetooth printers...', devices: [] });
   const seen = new Map<string, FoundDevice>();
   m.startDeviceScan(null, { allowDuplicates: false }, (error: any, dev: any) => {
     if (error) {
-      stopScan();
-      emit({ status: connectedDevice ? 'connected' : 'disconnected', message: `Scan failed: ${error.message ?? error}` });
+      scanning = false;
+      emit({ message: `Scan failed: ${error.message ?? error}` });
       return;
     }
     const name = (dev?.name || dev?.localName || '').trim();
@@ -146,9 +178,8 @@ export async function startScan(durationMs = 10000): Promise<void> {
     emit({ devices: Array.from(seen.values()).sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999)) });
   });
   scanTimer = setTimeout(() => {
-    stopScan();
+    scanning = false;
     emit({
-      status: connectedDevice ? 'connected' : 'disconnected',
       message: seen.size
         ? 'Scan finished. Tap a printer to connect.'
         : 'No Bluetooth LE devices found. Make sure the printer is on, close to the tablet, and supports Bluetooth LE.',
@@ -162,8 +193,9 @@ export function stopScan() {
   try {
     manager?.stopDeviceScan?.();
   } catch {}
-  if (snapshot.status === 'scanning') {
-    emit({ status: connectedDevice ? 'connected' : 'disconnected' });
+  if (scanning) {
+    scanning = false;
+    emit({});
   }
 }
 
@@ -186,71 +218,73 @@ export async function connectTo(id: string, name: string): Promise<boolean> {
   const m = getManager();
   if (!m) return false;
   if (!(await ensurePermissions(true))) {
-    emit({ message: 'Bluetooth permission was denied.', status: 'disconnected' });
+    emit({ message: 'Bluetooth permission was denied.' });
     return false;
   }
   if (!(await bluetoothOn(m))) {
-    if (snapshot.status !== 'unsupported') emit({ status: 'bluetooth-off', message: 'Bluetooth is turned off.' });
+    emit({ message: 'Bluetooth is turned off.' });
     return false;
   }
   stopScan();
-  emit({ status: 'connecting', message: `Connecting to ${name}...` });
+  if (conns.has(id)) await disconnectPrinter(id, false);
+  upsertConnection({ id, name, status: 'connecting', message: `Connecting to ${name}...` });
   try {
-    if (connectedDevice) await disconnectPrinter(false);
     let dev = await m.connectToDevice(id, { requestMTU: 185, timeout: 10000 });
     dev = await dev.discoverAllServicesAndCharacteristics();
     const ch = await pickWriteCharacteristic(dev);
     if (!ch) {
       await dev.cancelConnection().catch(() => {});
-      emit({
-        status: 'disconnected',
-        device: null,
-        message: `${name} connected but exposes no writable print channel. It may be a Bluetooth Classic-only printer.`,
-      });
+      dropConnection(id, `${name} connected but exposes no writable print channel. It may be a Bluetooth Classic-only printer.`);
       return false;
     }
-    connectedDevice = dev;
-    writeChar = ch;
-    disconnectSub = m.onDeviceDisconnected(id, () => {
-      clearConnection();
-      emit({ status: 'disconnected', message: `${name} disconnected.`, device: null });
+    const disconnectSub = m.onDeviceDisconnected(id, () => {
+      dropConnection(id, `${name} disconnected.`);
     });
-    emit({ status: 'connected', message: `Connected to ${name}.`, device: { id, name } });
+    conns.set(id, { dev, writeChar: ch, disconnectSub });
+    upsertConnection({ id, name, status: 'connected', message: `Connected to ${name}.` });
     return true;
   } catch (e: any) {
-    clearConnection();
-    emit({ status: 'disconnected', device: null, message: `Could not connect to ${name}: ${e?.message ?? e}` });
+    dropConnection(id, `Could not connect to ${name}: ${e?.message ?? e}`);
     return false;
   }
 }
 
-export async function disconnectPrinter(announce = true): Promise<void> {
+export async function disconnectPrinter(id: string, announce = true): Promise<void> {
   const m = manager;
-  const dev = connectedDevice;
-  clearConnection();
+  const entry = conns.get(id);
+  conns.delete(id);
   try {
-    if (dev && m) await m.cancelDeviceConnection(dev.id);
+    if (entry?.dev && m) await m.cancelDeviceConnection(entry.dev.id);
   } catch {}
-  if (announce) emit({ status: 'disconnected', device: null, message: 'Printer disconnected.' });
+  try {
+    entry?.disconnectSub?.remove?.();
+  } catch {}
+  const next = snapshot.connections.filter((c) => c.id !== id);
+  emit({ connections: next, ...(announce ? { message: 'Printer disconnected.' } : {}) });
 }
 
-export async function verifyConnection(): Promise<boolean> {
+/** Verifies one connection (by id) or, with no id, every currently tracked connection - drops any
+ * that have actually gone away so the snapshot never claims a fake "Connected" (Part F.1). */
+export async function verifyConnection(id?: string): Promise<boolean> {
   const m = manager;
-  if (!m || !connectedDevice) {
-    if (snapshot.status === 'connected') emit({ status: 'disconnected', device: null, message: 'Printer is not connected.' });
-    return false;
-  }
-  try {
-    const ok = await m.isDeviceConnected(connectedDevice.id);
-    if (!ok) {
-      const name = snapshot.device?.name ?? 'Printer';
-      clearConnection();
-      emit({ status: 'disconnected', device: null, message: `${name} is no longer connected.` });
+  if (!m) return false;
+  const ids = id ? [id] : Array.from(conns.keys());
+  let anyOk = false;
+  for (const checkId of ids) {
+    const entry = conns.get(checkId);
+    if (!entry) continue;
+    try {
+      const ok = await m.isDeviceConnected(entry.dev.id);
+      if (ok) anyOk = true;
+      else {
+        const name = snapshot.connections.find((c) => c.id === checkId)?.name ?? 'Printer';
+        dropConnection(checkId, `${name} is no longer connected.`);
+      }
+    } catch {
+      // leave it as-is on a transient check failure rather than dropping a possibly-fine connection
     }
-    return ok;
-  } catch {
-    return false;
   }
+  return id ? anyOk : conns.size > 0;
 }
 
 export async function reconnectSaved(id: string, name: string): Promise<void> {
@@ -264,22 +298,29 @@ export async function reconnectSaved(id: string, name: string): Promise<void> {
 
 export class PrintError extends Error {}
 
-export async function printLines(lines: PrintBlock[]): Promise<void> {
+/** Sends to a specific connected printer id, or - with none given - whichever one connected
+ * first. Role resolution (which id a Cook/Customer Bill should target) lives in
+ * printing/actions.ts, which has access to Settings; this module only knows about live hardware
+ * connections, not app-level printer roles. */
+export async function printLines(lines: PrintBlock[], deviceId?: string): Promise<void> {
   if (!getManager()) throw new PrintError('Bluetooth printing is not available in this build.');
-  if (!(await verifyConnection()) || !writeChar) throw new PrintError('Printer is not connected.');
+  const targetId = deviceId ?? conns.keys().next().value;
+  if (!targetId || !(await verifyConnection(targetId))) throw new PrintError('Printer is not connected.');
+  const entry = conns.get(targetId);
+  if (!entry?.writeChar) throw new PrintError('Printer is not connected.');
   const data = encodeEscPos(lines);
   const chunk = 100;
   try {
     for (let i = 0; i < data.length; i += chunk) {
       const b64 = toBase64(data.subarray(i, i + chunk));
-      if (writeChar.isWritableWithResponse) await writeChar.writeWithResponse(b64);
+      if (entry.writeChar.isWritableWithResponse) await entry.writeChar.writeWithResponse(b64);
       else {
-        await writeChar.writeWithoutResponse(b64);
+        await entry.writeChar.writeWithoutResponse(b64);
         await new Promise((r) => setTimeout(r, 25));
       }
     }
   } catch (e: any) {
-    await verifyConnection();
+    await verifyConnection(targetId);
     throw new PrintError(`Print failed: ${e?.message ?? e}`);
   }
 }

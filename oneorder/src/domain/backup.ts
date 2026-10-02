@@ -1,4 +1,4 @@
-import type { Category, Customer, GstLine, MenuItem, Session, Settings, State, TableDef } from './types';
+import type { Category, Customer, GstLine, MenuItem, PrinterDevice, Session, Settings, State, TableDef } from './types';
 
 export const BACKUP_VERSION = 1;
 
@@ -72,6 +72,32 @@ function sanitizeGstSettings(incoming: unknown, fallback: Settings['gst']): Sett
     return { enabled, number, lines: [{ type: 'GST', percent: g.percent }] };
   }
   return { enabled, number, lines: fallback.lines };
+}
+
+function isValidPrinterDevice(v: unknown): v is PrinterDevice {
+  if (!v || typeof v !== 'object') return false;
+  const d = v as Record<string, unknown>;
+  return typeof d.id === 'string' && typeof d.name === 'string' && (d.role === 'both' || d.role === 'customer' || d.role === 'cook');
+}
+
+/** Defensively repairs a restored printer-settings object, and migrates the pre-Round-6 single
+ * deviceId/deviceName shape into one 'both'-role device - otherwise an old backup (or an already-
+ * installed device's own local data from before this change, which goes through this same path on
+ * a fresh app update) would crash on `.devices` being undefined. BLE pairings are per-device
+ * hardware regardless - restoring a remembered printer that isn't actually reachable on this
+ * tablet just fails the next reconnect attempt harmlessly, same as today. */
+function sanitizePrinterSettings(incoming: unknown, fallback: Settings['printer']): Settings['printer'] {
+  if (!incoming || typeof incoming !== 'object') return fallback;
+  const p = incoming as Record<string, unknown>;
+  const templateId = typeof p.templateId === 'string' ? p.templateId : fallback.templateId;
+  if (Array.isArray(p.devices)) {
+    return { templateId, devices: p.devices.filter(isValidPrinterDevice) };
+  }
+  if (typeof p.deviceId === 'string' && p.deviceId) {
+    const name = typeof p.deviceName === 'string' ? p.deviceName : 'Printer';
+    return { templateId, devices: [{ id: p.deviceId, name, role: 'both' }] };
+  }
+  return { templateId, devices: fallback.devices };
 }
 
 export function buildBackup(state: State, now: number): BackupFile {
@@ -157,6 +183,7 @@ export function applyBackup(current: State, backup: BackupFile): State {
         priorityCounter: cur.priorityCounter,
         bill: sanitizeBillSettings(incoming.bill, cur.bill),
         gst: sanitizeGstSettings(incoming.gst, cur.gst),
+        printer: sanitizePrinterSettings(incoming.printer, cur.printer),
       }
     : cur;
   const sessions = byId(backup.data.sessions);

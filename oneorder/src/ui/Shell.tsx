@@ -15,6 +15,7 @@ import { useStore, type TabKey } from '../store/store';
 import { useSyncStatus } from '../sync/engine';
 import { Dot, FadeIn, Icon, ToastHost, Wordmark, type IconName } from './components';
 import { LogoMark } from './Logo';
+import { PinGate } from './PinGate';
 import { UsersScreen } from '../screens/UsersScreen';
 import { colors, fonts } from './theme';
 
@@ -32,6 +33,8 @@ export function Shell() {
   const tab = useStore((s) => s.tab);
   const setTab = useStore((s) => s.setTab);
   const lock = useStore((s) => s.lock);
+  const chefMode = useStore((s) => s.chefMode);
+  const exitChefMode = useStore((s) => s.exitChefMode);
   const tableMode = useStore((s) => s.data.settings.main.tableMode);
   const printerCfg = useStore((s) => s.data.settings.main.printer);
   const cafeName = useStore((s) => s.data.settings.main.bill.name);
@@ -41,9 +44,10 @@ export function Shell() {
   const printer = usePrinter();
   const sync = useSyncStatus();
   const [printerOpen, setPrinterOpen] = useState(false);
+  const [exitOpen, setExitOpen] = useState(false);
 
   useEffect(() => {
-    if (printerCfg.deviceId) reconnectSaved(printerCfg.deviceId, printerCfg.deviceName || 'Printer');
+    for (const d of printerCfg.devices ?? []) reconnectSaved(d.id, d.name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -55,6 +59,64 @@ export function Shell() {
   const info = printerStatusInfo(printer.status);
   const items = NAV.filter((n) => n.key !== 'tables' || tableMode);
   const activeTab: TabKey = tab === 'tables' && !tableMode ? 'order' : tab;
+
+  // Chef Mode: a second tablet running this same app, locked down to only Kitchen (in its
+  // interactive variant - see KitchenScreen's chefMode prop) and the printer connection. No tab
+  // bar at all, so there's nothing to tap into Tables/Menu/Users/Dashboard/Dev Mode through -
+  // getting back out requires the exit code, not just a tap.
+  if (chefMode) {
+    return (
+      <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
+        <View style={styles.topBar}>
+          <LogoMark size={34} />
+          <View style={styles.lockup}>
+            <Text style={styles.cafeName} numberOfLines={1}>
+              {cafeName?.trim() || 'ONEORDER'}
+            </Text>
+            <Text style={styles.chefBadge}>Chef Mode</Text>
+          </View>
+          <View style={{ flex: 1 }} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Printer ${info.label}. Tap to manage`}
+            onPress={() => setPrinterOpen(true)}
+            style={styles.printerPill}
+          >
+            <Icon name="printer" size={16} color={colors.text} />
+            <Dot color={info.color} />
+            <Text style={styles.printerText}>
+              {printer.connections.length > 1 ? `${printer.connections.length} printers` : printer.status === 'connected' ? 'Connected' : 'Disconnected'}
+            </Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Exit Chef Mode" onPress={() => setExitOpen(true)} style={styles.exitBtn}>
+            <Icon name="lock" size={18} color={colors.text} />
+          </Pressable>
+        </View>
+
+        {saveError ? (
+          <Pressable style={styles.errBar} onPress={retrySave}>
+            <Icon name="alert-triangle" size={16} color="#fff" />
+            <Text style={styles.errText}>Could not save to this tablet: {saveError}. Tap to retry.</Text>
+          </Pressable>
+        ) : null}
+
+        <View style={{ flex: 1 }}>
+          <KitchenScreen />
+        </View>
+
+        <PrinterModal visible={printerOpen} onClose={() => setPrinterOpen(false)} />
+        <PinGate
+          visible={exitOpen}
+          title="Exit Chef Mode"
+          pinLength={4}
+          onVerify={exitChefMode}
+          onClose={() => setExitOpen(false)}
+          onUnlocked={() => setExitOpen(false)}
+        />
+        <ToastHost />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
@@ -102,7 +164,9 @@ export function Shell() {
         >
           <Icon name="printer" size={16} color={colors.text} />
           <Dot color={info.color} />
-          <Text style={styles.printerText}>{printer.status === 'connected' ? 'Connected' : 'Disconnected'}</Text>
+          <Text style={styles.printerText}>
+            {printer.connections.length > 1 ? `${printer.connections.length} printers` : printer.status === 'connected' ? 'Connected' : 'Disconnected'}
+          </Text>
         </Pressable>
         {sync.configured ? (
           <View style={styles.cloud} accessibilityLabel={`Cloud: ${sync.label}`}>
@@ -168,6 +232,15 @@ const styles = StyleSheet.create({
   cafeName: { fontFamily: fonts.heading, fontSize: 22, color: colors.primary, lineHeight: 24 },
   wordmarkRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
   version: { fontFamily: fonts.body, fontSize: 10, color: colors.textSoft },
+  chefBadge: { fontFamily: fonts.semibold, fontSize: 11, color: colors.coral, textTransform: 'uppercase', letterSpacing: 0.5 },
+  exitBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.muted,
+  },
   navRow: { alignItems: 'center', paddingHorizontal: 4, gap: 6 },
   navItem: {
     flexDirection: 'row',
