@@ -181,6 +181,15 @@ function amountColumnWidth(lines: BillLine[], total: number): number {
   return longest + 1;
 }
 
+// Unlike the amount column (sized from the real totals above), a fixed-width Rate column would
+// silently overflow its line - and throw off every column after it - the moment a unit price
+// formats wider than that fixed guess (e.g. four-figure pricing). Size it from the real data too.
+function rateColumnWidth(lines: BillLine[]): number {
+  let longest = 'Rate'.length;
+  for (const l of lines) longest = Math.max(longest, formatMoney(l.unitPrice).length);
+  return longest + 1;
+}
+
 export function layoutCustomerBill(t: PrintTemplate, d: BillData): PrintBlock[] {
   const w = t.columns;
   const out: PrintBlock[] = [];
@@ -197,10 +206,17 @@ export function layoutCustomerBill(t: PrintTemplate, d: BillData): PrintBlock[] 
   out.push(rule(w, rc));
 
   const amtW = amountColumnWidth(d.lines, d.total);
+  const rateW = rateColumnWidth(d.lines);
+  // A floor on the name column so the fixed header words ("Item", "Qty  Item") can never overflow
+  // the line themselves - pad() only ever adds space, it doesn't truncate, so a name column
+  // computed narrower than its own header text would silently widen the whole line past w.
+  // Item/data rows stay safe regardless (their content goes through wrapText first), but on an
+  // unusually high-value single-item line (Rate and Amount both wide) this floor is what keeps
+  // the header from being the thing that breaks.
+  const MIN_NAME_W = 6;
   if (t.style === 'wide') {
     const qtyW = 5;
-    const rateW = 11;
-    const nameW = w - qtyW - rateW - amtW;
+    const nameW = Math.max(MIN_NAME_W, w - qtyW - rateW - amtW);
     out.push({ text: pad('Item', nameW) + padLeft('Qty', qtyW) + padLeft('Rate', rateW) + padLeft('Amt', amtW), bold: true });
     out.push(rule(w));
     for (const l of d.lines) {
@@ -213,8 +229,7 @@ export function layoutCustomerBill(t: PrintTemplate, d: BillData): PrintBlock[] 
     }
   } else if (t.style === 'boxed') {
     const qtyW = 4;
-    const rateW = 7;
-    const nameW = w - qtyW - rateW - amtW;
+    const nameW = Math.max(MIN_NAME_W, w - qtyW - rateW - amtW);
     out.push({ text: pad('Qty  Item', nameW + qtyW) + padLeft('Rate', rateW) + padLeft('Amt', amtW), bold: true });
     out.push(rule(w, '.'));
     for (const l of d.lines) {
@@ -230,9 +245,8 @@ export function layoutCustomerBill(t: PrintTemplate, d: BillData): PrintBlock[] 
       });
     }
   } else {
-    const qtyW = 3;
-    const rateW = 7;
-    const nameW = w - qtyW - rateW - amtW;
+    const qtyW = 4;
+    const nameW = Math.max(MIN_NAME_W, w - qtyW - rateW - amtW);
     out.push({ text: pad('Item', nameW) + padLeft('Qty', qtyW) + padLeft('Rate', rateW) + padLeft('Amt', amtW), bold: true });
     out.push(rule(w));
     for (const l of d.lines) {

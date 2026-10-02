@@ -208,12 +208,22 @@ export function Modal({
   title,
   children,
   width = 520,
+  scrollable = true,
 }: {
   visible: boolean;
   onClose: () => void;
   title?: string;
   children: React.ReactNode;
   width?: number;
+  /**
+   * false when the content already manages its own scrolling (e.g. AutoScrollView for a bill
+   * preview). Nesting a second vertical ScrollView around content that scrolls itself is the
+   * actual, longstanding cause of the bill preview's "can't scroll" bug across several previous
+   * attempts to fix it in Receipt/AutoScrollView alone - same-axis nested ScrollViews are
+   * unreliable on Android (the parent and child fight over the drag gesture), regardless of
+   * nestedScrollEnabled. Set this false and let the child own its single scroll container.
+   */
+  scrollable?: boolean;
 }) {
   const dim = useWindowDimensions();
   const v = useRef(new Animated.Value(0)).current;
@@ -252,9 +262,13 @@ export function Modal({
                 </Pressable>
               </View>
             ) : null}
-            <ScrollView style={{ maxHeight: dim.height - 48 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-              {children}
-            </ScrollView>
+            {scrollable ? (
+              <ScrollView style={{ maxHeight: dim.height - 48 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                {children}
+              </ScrollView>
+            ) : (
+              <View style={{ flexShrink: 1 }}>{children}</View>
+            )}
           </Pressable>
         </Animated.View>
       </Pressable>

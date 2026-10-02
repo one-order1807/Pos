@@ -48,6 +48,49 @@ test('customer bill: sectioned structure with Bill #, table, and a rule between 
   }
 });
 
+test('customer bill: a wide unit price never overflows the Rate column (not just the Amount column)', () => {
+  const s = seedState();
+  // A four-figure per-unit price (e.g. a catering package) - wide enough to have overflowed the
+  // old *fixed* Rate column width (7 on compact/boxed, 11 on wide) even though the dynamically
+  // sized Amount column never had this problem.
+  const data: BillData = {
+    ...baseBillData(s),
+    lines: [{ key: 'a', name: 'Catering Combo', qty: 1, unitPrice: 1200, amount: 1200 }],
+    subtotal: 1200,
+    total: 1200,
+  };
+  for (const t of TEMPLATES) {
+    const lines = textOnly(layoutCustomerBill(t, data));
+    const text = lines.map((l) => l.text).join('\n');
+    assert.ok(text.includes('Rs 1,200'), `${t.id} should show the wide rate/amount in full`);
+    for (const l of lines) {
+      const width = l.size === 2 ? t.columns / 2 : t.columns;
+      assert.ok(l.text.length <= width, `${t.id} "${l.text}" (len ${l.text.length}) overflows ${width} cols`);
+    }
+  }
+});
+
+test('customer bill: an extreme per-unit price degrades gracefully instead of crashing or corrupting the header', () => {
+  const s = seedState();
+  // Deliberately pathological (a five-figure single-item price) - not a realistic cafe order, and
+  // not something column math can make fit in 32/48 characters without truncating the price
+  // itself (worse than an overflowing line). What the name-column floor actually guarantees is
+  // narrower but still correct: layout never throws, and the header's fixed words are never
+  // mangled by wrapText/pad receiving a non-positive width.
+  const data: BillData = {
+    ...baseBillData(s),
+    lines: [{ key: 'a', name: 'X', qty: 1, unitPrice: 12345.5, amount: 12345.5 }],
+    subtotal: 12345.5,
+    total: 12345.5,
+  };
+  for (const t of TEMPLATES) {
+    const lines = textOnly(layoutCustomerBill(t, data));
+    const header = lines.find((l) => /Rate/.test(l.text));
+    assert.ok(header?.text.includes('Item'), `${t.id} header should still contain "Item" intact`);
+    assert.ok(header?.text.includes('Rate'), `${t.id} header should still contain "Rate" intact`);
+  }
+});
+
 test('occasion greeting: generic Birthday/Anniversary lines, off by default, Other/no-event silent', () => {
   const birthday = { event: 'Birthday' as const };
   assert.equal(occasionLine(birthday, false), undefined, 'off by default');

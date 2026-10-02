@@ -119,7 +119,7 @@ export function BillModal({ sessionId, onClose }: { sessionId: string | null; on
 
   return (
     <>
-      <Modal visible onClose={onClose} title="Customer Bill" width={720}>
+      <Modal visible onClose={onClose} title="Customer Bill" width={720} scrollable={false}>
         <View style={styles.body}>
           <View style={styles.left}>
             <AutoScrollView autoScrollSignal={scrollSignal} style={styles.receiptScroll}>

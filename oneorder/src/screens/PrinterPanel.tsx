@@ -160,7 +160,7 @@ export function TemplatePicker() {
           />
         </Card>
       ))}
-      <Modal visible={!!preview} onClose={() => setPreviewId(null)} title={preview?.name ?? ''} width={620}>
+      <Modal visible={!!preview} onClose={() => setPreviewId(null)} title={preview?.name ?? ''} width={620} scrollable={false}>
         {preview ? (
           <View>
             <View style={{ flexDirection: 'row', marginBottom: 10 }}>
