@@ -4,7 +4,9 @@ import appJson from '../../app.json';
 import { parseBackup, buildBackup, buildMenuExport, previewBackup, type BackupFile, type BackupPreview } from '../domain/backup';
 import { computeTotals } from '../domain/bill';
 import { formatMoney, formatPercent } from '../domain/money';
-import type { GstLine, GstSettings } from '../domain/types';
+import { uid } from '../domain/ops';
+import { hashPin, makeSalt } from '../domain/sha256';
+import type { GstLine, GstSettings, WaiterAccount } from '../domain/types';
 import { useStore } from '../store/store';
 import { syncNow, useSyncStatus } from '../sync/engine';
 import { rasterizeLogo, rasterizeQr } from '../printing/assets';
@@ -68,6 +70,8 @@ export function DevModeScreen() {
       <GstSetup />
       <TableModeSetup />
       <CombinedBillSetup />
+      <WaiterModeSetup />
+      <NotificationSetup />
       <BubbleStatus />
       <Card style={styles.section}>
         <SectionTitle>Printer setup</SectionTitle>
@@ -439,6 +443,174 @@ function CombinedBillSetup() {
   );
 }
 
+function WaiterModeSetup() {
+  const waiter = useStore((s) => s.data.settings.main.waiter);
+  const setWaiterSettings = useStore((s) => s.setWaiterSettings);
+  const [addOpen, setAddOpen] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [canPrint, setCanPrint] = useState(true);
+  const [removing, setRemoving] = useState<WaiterAccount | null>(null);
+
+  useEffect(() => {
+    if (addOpen) {
+      setUsername('');
+      setPassword('');
+      setCanPrint(true);
+    }
+  }, [addOpen]);
+
+  function addWaiter() {
+    const name = username.trim();
+    if (!name || !password) {
+      toast('Enter a username and password.', 'error');
+      return;
+    }
+    if (waiter.accounts.some((a) => a.username.toLowerCase() === name.toLowerCase())) {
+      toast('A waiter with this username already exists.', 'error');
+      return;
+    }
+    const salt = makeSalt();
+    const acct: WaiterAccount = {
+      id: uid('wtr'),
+      username: name,
+      passwordHash: hashPin(password, salt),
+      passwordSalt: salt,
+      canPrintCustomerBill: canPrint,
+      active: true,
+    };
+    setWaiterSettings({ accounts: [...waiter.accounts, acct] });
+    setUsername('');
+    setPassword('');
+    setCanPrint(true);
+    setAddOpen(false);
+    toast(`${name} added.`, 'success');
+  }
+
+  function updateAccount(id: string, patch: Partial<WaiterAccount>) {
+    setWaiterSettings({ accounts: waiter.accounts.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
+  }
+
+  return (
+    <Card style={styles.section}>
+      <View style={styles.switchRow}>
+        <View style={{ flex: 1 }}>
+          <SectionTitle>Waiter Mode</SectionTitle>
+          <Text style={styles.hint}>
+            Lets waiters log into a phone/tablet with their own account to take dine-in orders and track their own
+            tickets. Each waiter gets their own username and password; only orders they open show up for them.
+          </Text>
+        </View>
+        <Switch
+          value={waiter.enabled}
+          onValueChange={(v) => setWaiterSettings({ enabled: v })}
+          trackColor={{ true: colors.primary }}
+          accessibilityLabel="Waiter Mode toggle"
+        />
+      </View>
+      {waiter.enabled ? (
+        <View>
+          {waiter.accounts.length === 0 ? <Text style={styles.hint}>No waiter accounts yet.</Text> : null}
+          {waiter.accounts.map((a) => (
+            <View key={a.id} style={styles.waiterRow}>
+              <View style={{ flex: 1, minWidth: 100 }}>
+                <Text style={styles.label}>{a.username}</Text>
+                <Text style={styles.hint}>{a.active ? 'Active' : 'Disabled'}</Text>
+              </View>
+              <View style={styles.waiterToggle}>
+                <Text style={styles.hint}>Print Bill</Text>
+                <Switch
+                  value={a.canPrintCustomerBill}
+                  onValueChange={(v) => updateAccount(a.id, { canPrintCustomerBill: v })}
+                  trackColor={{ true: colors.primary }}
+                  accessibilityLabel={`${a.username} can print Customer Bill`}
+                />
+              </View>
+              <View style={styles.waiterToggle}>
+                <Text style={styles.hint}>Active</Text>
+                <Switch
+                  value={a.active}
+                  onValueChange={(v) => updateAccount(a.id, { active: v })}
+                  trackColor={{ true: colors.primary }}
+                  accessibilityLabel={`${a.username} account active`}
+                />
+              </View>
+              <Pressable onPress={() => setRemoving(a)} accessibilityLabel={`Remove ${a.username}`} style={styles.waiterRemove} hitSlop={8}>
+                <Icon name="trash-2" size={18} color={colors.red} />
+              </Pressable>
+            </View>
+          ))}
+          <Btn small label="+ Add waiter" icon="plus" variant="secondary" onPress={() => setAddOpen(true)} style={{ alignSelf: 'flex-start', marginTop: 4 }} />
+        </View>
+      ) : null}
+      <Modal visible={addOpen} onClose={() => setAddOpen(false)} title="Add waiter" width={400}>
+        <Field label="Username" value={username} onChangeText={setUsername} autoCapitalize="none" maxLength={24} />
+        <Field label="Password" value={password} onChangeText={setPassword} autoCapitalize="none" maxLength={40} />
+        <View style={[styles.switchRow, { marginBottom: 16 }]}>
+          <Text style={[styles.label, { flex: 1 }]}>Can print Customer Bill</Text>
+          <Switch value={canPrint} onValueChange={setCanPrint} trackColor={{ true: colors.primary }} accessibilityLabel="New waiter can print Customer Bill" />
+        </View>
+        <Btn label="Add waiter" icon="check" full onPress={addWaiter} />
+      </Modal>
+      <Confirm
+        visible={!!removing}
+        title="Remove this waiter?"
+        message={`${removing?.username ?? ''}'s account will be removed. Orders they already placed keep their history, but they'll no longer be able to log in.`}
+        confirmLabel="Remove"
+        danger
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => {
+          if (removing) setWaiterSettings({ accounts: waiter.accounts.filter((a) => a.id !== removing.id) });
+          setRemoving(null);
+        }}
+      />
+    </Card>
+  );
+}
+
+function NotificationSetup() {
+  const notif = useStore((s) => s.data.settings.main.notifications);
+  const setNotificationSettings = useStore((s) => s.setNotificationSettings);
+  const [repeatText, setRepeatText] = useState(String(notif.repeatSeconds));
+
+  return (
+    <Card style={styles.section}>
+      <SectionTitle>Waiter notifications</SectionTitle>
+      <Text style={styles.hint}>Alerts a waiter with a sound and/or vibration the moment the kitchen marks their order ready.</Text>
+      <View style={styles.switchRow}>
+        <Text style={[styles.label, { flex: 1 }]}>Sound</Text>
+        <Switch
+          value={notif.soundEnabled}
+          onValueChange={(v) => setNotificationSettings({ soundEnabled: v })}
+          trackColor={{ true: colors.primary }}
+          accessibilityLabel="Notification sound toggle"
+        />
+      </View>
+      <View style={styles.switchRow}>
+        <Text style={[styles.label, { flex: 1 }]}>Vibration</Text>
+        <Switch
+          value={notif.vibrationEnabled}
+          onValueChange={(v) => setNotificationSettings({ vibrationEnabled: v })}
+          trackColor={{ true: colors.primary }}
+          accessibilityLabel="Notification vibration toggle"
+        />
+      </View>
+      <Field
+        label="Repeat every N seconds until served (0 = alert once)"
+        value={repeatText}
+        onChangeText={setRepeatText}
+        keyboardType="number-pad"
+        maxLength={3}
+        onBlur={() => {
+          const n = Math.max(0, Math.min(300, Number(repeatText) || 0));
+          setRepeatText(String(n));
+          setNotificationSettings({ repeatSeconds: n });
+        }}
+      />
+    </Card>
+  );
+}
+
 function DataTools() {
   const data = useStore((s) => s.data);
   const importMenuText = useStore((s) => s.importMenuText);
@@ -623,4 +795,7 @@ const styles = StyleSheet.create({
   btnRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   gstRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   gstRemove: { width: 44, height: 48, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  waiterRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.muted },
+  waiterToggle: { alignItems: 'center', gap: 2 },
+  waiterRemove: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
 });

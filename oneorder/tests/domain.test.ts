@@ -428,3 +428,31 @@ test('print layout: fits width, consolidated, GST line only when on, test marked
   assert.equal(toBase64(Uint8Array.from([72, 105])), 'SGk=');
   assert.equal(toBase64(Uint8Array.from([1, 2, 3])), 'AQID');
 });
+
+test('waiter attribution: createSession stamps openedBy, markServed is a one-way checkpoint', () => {
+  let s = seedState();
+  const o = ops.createSession(s, 'dine-in', T0, 'tbl_1', 'wtr_ravi');
+  s = o.state;
+  assert.equal(s.sessions[o.sessionId].openedBy, 'wtr_ravi');
+
+  // unset when no waiter opened it (the normal admin/counter flow) - never defaults to a string.
+  const admin = ops.createSession(s, 'takeaway', T0);
+  assert.equal(admin.state.sessions[admin.sessionId].openedBy, undefined);
+
+  s = ops.addLine(s, o.sessionId, item(s, 'H01'), 1);
+  const cook = ops.sendCookBill(s, o.sessionId, T0 + 100);
+  s = cook.state;
+  const ticketId = cook.ticketId!;
+  assert.equal(s.tickets[ticketId].servedAt, null);
+
+  s = ops.markReady(s, ticketId, T0 + 200);
+  s = ops.markServed(s, ticketId, T0 + 300);
+  assert.equal(s.tickets[ticketId].servedAt, T0 + 300);
+
+  // idempotent - a second call (e.g. a double-tap) never moves the timestamp.
+  s = ops.markServed(s, ticketId, T0 + 999);
+  assert.equal(s.tickets[ticketId].servedAt, T0 + 300);
+
+  // kitchen-side status is untouched by any of this - served is layered on top, not a status value.
+  assert.equal(s.tickets[ticketId].status, 'ready');
+});

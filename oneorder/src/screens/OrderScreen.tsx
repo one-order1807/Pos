@@ -38,7 +38,7 @@ function PrinterStatusRow() {
 
 const PANEL_WIDTH = 380;
 
-export function OrderScreen() {
+export function OrderScreen({ waiterId, dineInOnly }: { waiterId?: string; dineInOnly?: boolean } = {}) {
   const { width } = useWindowDimensions();
   const compact = width < 820;
   const data = useStore((s) => s.data);
@@ -60,7 +60,10 @@ export function OrderScreen() {
   const [panelOpen, setPanelOpen] = useState(false);
 
   const settings = data.settings.main;
-  const sessions = openSessions(data);
+  const sessions = useMemo(() => {
+    const all = openSessions(data);
+    return waiterId ? all.filter((s) => s.openedBy === waiterId) : all;
+  }, [data, waiterId]);
   const active = activeId ? data.sessions[activeId] : undefined;
   const categories = useMemo(
     () => Object.values(data.categories).sort((a, b) => a.sort - b.sort),
@@ -97,7 +100,7 @@ export function OrderScreen() {
 
   function startOrder(type: OrderType) {
     setNewMenu(false);
-    newOrder(type);
+    newOrder(type, waiterId);
   }
 
   function requestClose(s: Session) {
@@ -108,7 +111,7 @@ export function OrderScreen() {
   function pickFromNew(tableId: string) {
     setTablePick(false);
     setNewMenu(false);
-    const r = openTable(tableId);
+    const r = openTable(tableId, waiterId);
     if (r.redirected) toast('That table already has an order — opened it.');
   }
 
@@ -154,9 +157,14 @@ export function OrderScreen() {
               </View>
             );
           })}
-          <Pressable accessibilityRole="button" accessibilityLabel="New order" style={styles.plus} onPress={() => setNewMenu(true)}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={dineInOnly ? 'Select table' : 'New order'}
+            style={styles.plus}
+            onPress={() => (dineInOnly ? setTablePick(true) : setNewMenu(true))}
+          >
             <Icon name="plus" size={20} color={colors.primary} />
-            <Text style={styles.plusText}>New Order</Text>
+            <Text style={styles.plusText}>{dineInOnly ? 'Select table' : 'New Order'}</Text>
           </Pressable>
         </ScrollView>
       </View>
@@ -255,8 +263,8 @@ export function OrderScreen() {
           <Btn
             full
             icon="shopping-bag"
-            label={active ? `View order · ${orderTotal} item(s)` : 'No order open'}
-            onPress={() => (active ? setPanelOpen(true) : setNewMenu(true))}
+            label={active ? `View order · ${orderTotal} item(s)` : dineInOnly ? 'Select table' : 'No order open'}
+            onPress={() => (active ? setPanelOpen(true) : dineInOnly ? setTablePick(true) : setNewMenu(true))}
           />
         </View>
       ) : null}

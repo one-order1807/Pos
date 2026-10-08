@@ -55,6 +55,9 @@ export interface Session {
   paidAt: number | null;
   final: FinalTotals | null;
   mergedMembers?: string[];
+  /** The waiter account that opened this order, if any (Waiter Mode). Unset for orders opened
+   * from the normal admin/counter screen. */
+  openedBy?: string;
 }
 
 export interface FinalTotals {
@@ -81,6 +84,7 @@ export interface Ticket {
   sentAt: number;
   startedAt: number | null;
   readyAt: number | null;
+  servedAt: number | null;
   priority: number;
   printed: boolean;
 }
@@ -150,6 +154,28 @@ export interface PrinterSettings {
   devices: PrinterDevice[];
 }
 
+export interface WaiterAccount {
+  id: string;
+  username: string;
+  passwordHash: string;
+  passwordSalt: string;
+  canPrintCustomerBill: boolean;
+  /** Disabled accounts can't log in, but stay around so order history attribution isn't lost. */
+  active: boolean;
+}
+
+export interface WaiterSettings {
+  enabled: boolean;
+  accounts: WaiterAccount[];
+}
+
+export interface NotificationSettings {
+  soundEnabled: boolean;
+  vibrationEnabled: boolean;
+  /** Seconds between repeat alerts for an unacknowledged ready ticket; 0 = fire once, no repeat. */
+  repeatSeconds: number;
+}
+
 export interface Settings {
   id: 'main';
   tableMode: boolean;
@@ -160,6 +186,8 @@ export interface Settings {
   gst: GstSettings;
   bill: BillSettings;
   printer: PrinterSettings;
+  waiter: WaiterSettings;
+  notifications: NotificationSettings;
   pinHash: string;
   pinSalt: string;
   orderCounter: { date: string; n: number };

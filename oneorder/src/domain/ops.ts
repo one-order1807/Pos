@@ -127,6 +127,7 @@ export function createSession(
   type: OrderType,
   now: number,
   tableId: string | null = null,
+  openedBy?: string,
 ): CreateResult {
   if (type === 'dine-in' && tableId) {
     const table = state.tables[tableId];
@@ -152,6 +153,7 @@ export function createSession(
     paymentMethod: null,
     paidAt: null,
     final: null,
+    ...(openedBy ? { openedBy } : null),
   };
   return { state: withSession(s1, session), sessionId: session.id, redirected: false };
 }
@@ -318,6 +320,7 @@ export function sendCookBill(state: State, sessionId: string, now: number): Cook
     sentAt: now,
     startedAt: null,
     readyAt: null,
+    servedAt: null,
     priority,
     printed: false,
   };
@@ -463,6 +466,14 @@ export function markReady(state: State, ticketId: string, now: number): State {
     ...state,
     tickets: { ...state.tickets, [ticketId]: { ...t, status: 'ready', readyAt: now, startedAt: t.startedAt ?? now } },
   };
+}
+
+/** The waiter's own delivery checkpoint - layered on top of kitchen status (`Ticket.status`
+ * itself is untouched), so it's safe to call regardless of admin/chef views that never read it. */
+export function markServed(state: State, ticketId: string, now: number): State {
+  const t = state.tickets[ticketId];
+  if (!t || t.servedAt) return state;
+  return { ...state, tickets: { ...state.tickets, [ticketId]: { ...t, servedAt: now } } };
 }
 
 export function reorderPending(state: State, ticketId: string, toIndex: number): State {

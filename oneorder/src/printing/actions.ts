@@ -123,6 +123,14 @@ export async function printCookRound(sessionId: string, round: number | null): P
 }
 
 export async function printCustomerBill(sessionId: string): Promise<PrintOutcome> {
+  // Enforced here, not just in whichever button happens to be visible - there are three separate
+  // call sites (BillModal's two buttons, plus OrderPanel's combined-bill-print button), and a
+  // waiter account without this permission must be blocked no matter which one triggered it.
+  const waiterId = useStore.getState().loggedInWaiterId;
+  if (waiterId) {
+    const acct = useStore.getState().data.settings.main.waiter.accounts.find((a) => a.id === waiterId);
+    if (!acct?.canPrintCustomerBill) return { ok: false, error: 'This waiter account cannot print the Customer Bill.' };
+  }
   const state = useStore.getState().data;
   const s = state.sessions[sessionId];
   if (!s) return { ok: false, error: 'Order not found.' };

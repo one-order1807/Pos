@@ -13,9 +13,11 @@ import { usePrinter } from '../printing/actions';
 import { reconnectSaved } from '../printing/printer';
 import { useStore, type TabKey } from '../store/store';
 import { useSyncStatus } from '../sync/engine';
-import { Dot, FadeIn, Icon, ToastHost, Wordmark, type IconName } from './components';
+import { useTicketReadyWatcher } from '../notifications/ticketReady';
+import { Chip, Confirm, Dot, FadeIn, Icon, ToastHost, Wordmark, type IconName } from './components';
 import { LogoMark } from './Logo';
 import { PinGate } from './PinGate';
+import { WaiterLogin } from './WaiterLogin';
 import { UsersScreen } from '../screens/UsersScreen';
 import { colors, fonts } from './theme';
 
@@ -35,6 +37,9 @@ export function Shell() {
   const lock = useStore((s) => s.lock);
   const chefMode = useStore((s) => s.chefMode);
   const exitChefMode = useStore((s) => s.exitChefMode);
+  const loggedInWaiterId = useStore((s) => s.loggedInWaiterId);
+  const logoutWaiter = useStore((s) => s.logoutWaiter);
+  const waiterSettings = useStore((s) => s.data.settings.main.waiter);
   const tableMode = useStore((s) => s.data.settings.main.tableMode);
   const printerCfg = useStore((s) => s.data.settings.main.printer);
   const cafeName = useStore((s) => s.data.settings.main.bill.name);
@@ -45,6 +50,19 @@ export function Shell() {
   const sync = useSyncStatus();
   const [printerOpen, setPrinterOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
+  const [waiterLoginOpen, setWaiterLoginOpen] = useState(false);
+  const [waiterLogoutOpen, setWaiterLogoutOpen] = useState(false);
+  const [waiterSection, setWaiterSection] = useState<'order' | 'status'>('order');
+  // Always called, regardless of which branch below ends up rendering - Rules of Hooks. The hook
+  // itself no-ops whenever waiterId is null.
+  useTicketReadyWatcher(loggedInWaiterId);
+  const readyToServe = useStore((s) =>
+    loggedInWaiterId
+      ? Object.values(s.data.tickets).filter(
+          (t) => t.status === 'ready' && !t.servedAt && s.data.sessions[t.sessionId]?.openedBy === loggedInWaiterId,
+        ).length
+      : 0,
+  );
 
   useEffect(() => {
     for (const d of printerCfg.devices ?? []) reconnectSaved(d.id, d.name);
@@ -118,6 +136,73 @@ export function Shell() {
     );
   }
 
+  // Waiter Mode: a logged-in waiter's phone/tablet, locked down to a dine-in-only ordering view
+  // and their own ticket status - no tab bar, same "no way to wander into the rest of the app"
+  // posture as Chef Mode above, except logging out just needs a tap+confirm (there's no secret
+  // code to protect here the way Chef Mode's exit PIN protects the kitchen tablet).
+  if (loggedInWaiterId) {
+    const acct = waiterSettings.accounts.find((a) => a.id === loggedInWaiterId);
+    return (
+      <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
+        <View style={styles.topBar}>
+          <LogoMark size={34} />
+          <View style={styles.lockup}>
+            <Text style={styles.cafeName} numberOfLines={1}>
+              {cafeName?.trim() || 'ONEORDER'}
+            </Text>
+            <Text style={styles.chefBadge}>{acct?.username ?? 'Waiter'}</Text>
+          </View>
+          <View style={{ flex: 1 }} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Printer ${info.label}. Tap to manage`}
+            onPress={() => setPrinterOpen(true)}
+            style={styles.printerPill}
+          >
+            <Icon name="printer" size={16} color={colors.text} />
+            <Dot color={info.color} />
+            <Text style={styles.printerText}>
+              {printer.connections.length > 1 ? `${printer.connections.length} printers` : printer.status === 'connected' ? 'Connected' : 'Disconnected'}
+            </Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Log out" onPress={() => setWaiterLogoutOpen(true)} style={styles.exitBtn}>
+            <Icon name="log-out" size={18} color={colors.text} />
+          </Pressable>
+        </View>
+
+        <View style={styles.waiterSwitchRow}>
+          <Chip label="Order" active={waiterSection === 'order'} onPress={() => setWaiterSection('order')} />
+          <Chip label={`Status${readyToServe > 0 ? ` (${readyToServe})` : ''}`} active={waiterSection === 'status'} onPress={() => setWaiterSection('status')} />
+        </View>
+
+        {saveError ? (
+          <Pressable style={styles.errBar} onPress={retrySave}>
+            <Icon name="alert-triangle" size={16} color="#fff" />
+            <Text style={styles.errText}>Could not save to this tablet: {saveError}. Tap to retry.</Text>
+          </Pressable>
+        ) : null}
+
+        <View style={{ flex: 1 }}>
+          {waiterSection === 'order' ? <OrderScreen waiterId={loggedInWaiterId} dineInOnly /> : <KitchenScreen waiterId={loggedInWaiterId} />}
+        </View>
+
+        <PrinterModal visible={printerOpen} onClose={() => setPrinterOpen(false)} />
+        <Confirm
+          visible={waiterLogoutOpen}
+          title="Log out?"
+          message="You'll need your username and password to log back in."
+          confirmLabel="Log out"
+          onCancel={() => setWaiterLogoutOpen(false)}
+          onConfirm={() => {
+            logoutWaiter();
+            setWaiterLogoutOpen(false);
+          }}
+        />
+        <ToastHost />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.topBar}>
@@ -156,6 +241,12 @@ export function Shell() {
             );
           })}
         </ScrollView>
+        {waiterSettings.enabled ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="Waiter login" onPress={() => setWaiterLoginOpen(true)} style={styles.printerPill}>
+            <Icon name="log-in" size={16} color={colors.text} />
+            <Text style={styles.printerText}>Waiter login</Text>
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Printer ${info.label}. Tap to manage`}
@@ -207,6 +298,7 @@ export function Shell() {
       </View>
 
       <PrinterModal visible={printerOpen} onClose={() => setPrinterOpen(false)} />
+      <WaiterLogin visible={waiterLoginOpen} onClose={() => setWaiterLoginOpen(false)} onLoggedIn={() => setWaiterLoginOpen(false)} />
       <ToastHost />
     </SafeAreaView>
   );
@@ -271,4 +363,13 @@ const styles = StyleSheet.create({
   hidden: { display: 'none' },
   errBar: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.red, paddingHorizontal: 12, paddingVertical: 8 },
   errText: { flex: 1, color: '#fff', fontFamily: fonts.medium, fontSize: 13 },
+  waiterSwitchRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
 });

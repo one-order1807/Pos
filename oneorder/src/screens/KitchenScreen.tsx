@@ -19,33 +19,49 @@ function urgency(ms: number): { color: string; bg: string; text: string } {
   return { color: '#15803D', bg: '#F0FDF4', text: 'Fresh' };
 }
 
-export function KitchenScreen() {
+export function KitchenScreen({ waiterId }: { waiterId?: string } = {}) {
   const data = useStore((s) => s.data);
   const reorder = useStore((s) => s.reorderPending);
   const chefMode = useStore((s) => s.chefMode);
   const enterChefMode = useStore((s) => s.enterChefMode);
   const startTicket = useStore((s) => s.startTicket);
   const markReady = useStore((s) => s.markReady);
+  const markServed = useStore((s) => s.markServed);
   const now = useNow(10000);
   const { width } = useWindowDimensions();
   const stacked = width < 900;
+  // Both a chef and a waiter are restricted views - neither reorders the kitchen's queue, only
+  // the admin Kitchen tab does.
+  const restricted = chefMode || !!waiterId;
 
-  const pending = pendingTickets(data);
+  const myOpenSessionIds = useMemo(
+    () =>
+      waiterId
+        ? new Set(Object.values(data.sessions).filter((s) => s.openedBy === waiterId && s.status === 'open').map((s) => s.id))
+        : null,
+    [data.sessions, waiterId],
+  );
+  const scoped = <T extends { sessionId: string }>(list: T[]): T[] => (myOpenSessionIds ? list.filter((t) => myOpenSessionIds.has(t.sessionId)) : list);
+
+  const pending = scoped(pendingTickets(data));
   const cooking = useMemo(
     () =>
-      Object.values(data.tickets)
-        .filter((t) => t.status === 'cooking')
-        .sort((a, b) => (a.startedAt ?? a.sentAt) - (b.startedAt ?? b.sentAt)),
-    [data.tickets],
+      scoped(
+        Object.values(data.tickets)
+          .filter((t) => t.status === 'cooking')
+          .sort((a, b) => (a.startedAt ?? a.sentAt) - (b.startedAt ?? b.sentAt)),
+      ),
+    [data.tickets, myOpenSessionIds],
   );
   const ready = useMemo(
     () =>
-      Object.values(data.tickets)
-        .filter((t) => t.status === 'ready' && Date.now() - (t.readyAt ?? 0) < READY_WINDOW_MS)
-        .sort((a, b) => (b.readyAt ?? 0) - (a.readyAt ?? 0))
-        .slice(0, 20),
+      scoped(
+        Object.values(data.tickets)
+          .filter((t) => t.status === 'ready' && !(waiterId && t.servedAt) && Date.now() - (t.readyAt ?? 0) < READY_WINDOW_MS)
+          .sort((a, b) => (b.readyAt ?? 0) - (a.readyAt ?? 0)),
+      ).slice(0, 20),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.tickets, now],
+    [data.tickets, now, myOpenSessionIds, waiterId],
   );
 
   const [dragScroll, setDragScroll] = useState(false);
@@ -64,10 +80,10 @@ export function KitchenScreen() {
           tickets={pending}
           now={now}
           onReorder={reorder}
-          onReprint={reprint}
+          onReprint={waiterId ? null : reprint}
           setDragging={setDragScroll}
-          chefMode={chefMode}
-          onStart={startTicket}
+          restricted={restricted}
+          onStart={chefMode ? startTicket : null}
         />
       </Column>
       <Column title="Cooking" count={cooking.length} color={colors.coral} stacked={stacked}>
@@ -75,16 +91,22 @@ export function KitchenScreen() {
         {cooking.map((t) => (
           <TicketCard key={t.id} t={t} now={now} baseTime={t.sentAt} timeLabel="Sent">
             <View style={styles.btnRow}>
-              <Btn small label="Print" icon="printer" variant="secondary" onPress={() => reprint(t)} />
+              {!waiterId ? <Btn small label="Print" icon="printer" variant="secondary" onPress={() => reprint(t)} /> : null}
               {chefMode ? <Btn small label="Mark Ready" icon="check" variant="success" onPress={() => markReady(t.id)} /> : null}
             </View>
           </TicketCard>
         ))}
       </Column>
       <Column title="Ready" count={ready.length} color={colors.green} stacked={stacked}>
-        {ready.length === 0 ? <EmptyState icon="check-circle" text="Nothing ready yet." /> : null}
+        {ready.length === 0 ? <EmptyState icon="check-circle" text={waiterId ? 'Nothing waiting to be served.' : 'Nothing ready yet.'} /> : null}
         {ready.map((t) => (
-          <TicketCard key={t.id} t={t} now={now} baseTime={t.readyAt ?? t.sentAt} timeLabel="Done" noUrgency />
+          <TicketCard key={t.id} t={t} now={now} baseTime={t.readyAt ?? t.sentAt} timeLabel="Done" noUrgency>
+            {waiterId ? (
+              <View style={styles.btnRow}>
+                <Btn small label="Served" icon="check" variant="success" onPress={() => markServed(t.id)} />
+              </View>
+            ) : null}
+          </TicketCard>
         ))}
       </Column>
     </>
@@ -93,8 +115,8 @@ export function KitchenScreen() {
   return (
     <View style={styles.root}>
       <View style={styles.titleRow}>
-        <Text style={styles.title}>Kitchen</Text>
-        {!chefMode ? <Btn small label="Chef Mode" icon="shield" variant="secondary" onPress={enterChefMode} /> : null}
+        <Text style={styles.title}>{waiterId ? 'My Orders' : 'Kitchen'}</Text>
+        {!chefMode && !waiterId ? <Btn small label="Chef Mode" icon="shield" variant="secondary" onPress={enterChefMode} /> : null}
       </View>
       {stacked ? (
         <ScrollView scrollEnabled={!dragScroll} contentContainerStyle={{ padding: 12, gap: 12 }}>
@@ -193,16 +215,16 @@ function PendingList({
   onReorder,
   onReprint,
   setDragging,
-  chefMode,
+  restricted,
   onStart,
 }: {
   tickets: Ticket[];
   now: number;
   onReorder: (id: string, toIndex: number) => void;
-  onReprint: (t: Ticket) => void;
+  onReprint: ((t: Ticket) => void) | null;
   setDragging: (d: boolean) => void;
-  chefMode: boolean;
-  onStart: (id: string) => void;
+  restricted: boolean;
+  onStart: ((id: string) => void) | null;
 }) {
   const heights = useRef<Record<string, number>>({});
   const [drag, setDrag] = useState<{ id: string; dy: number } | null>(null);
@@ -266,7 +288,7 @@ function PendingList({
               timeLabel="Sent"
               style={isDrag ? { ...(shadow as object), borderColor: colors.primary } : undefined}
               handle={
-                chefMode ? undefined : (
+                restricted ? undefined : (
                   <View style={styles.handleWrap}>
                     <View {...pans.current[t.id].panHandlers} style={styles.handle} accessibilityLabel="Drag to change cook order">
                       <Icon name="menu" size={20} color={colors.textSoft} />
@@ -276,14 +298,14 @@ function PendingList({
               }
             >
               <View style={styles.btnRow}>
-                {!chefMode ? (
+                {!restricted ? (
                   <>
                     <Btn small label="Up" icon="chevron-up" variant="secondary" disabled={i === 0} onPress={() => onReorder(t.id, i - 1)} />
                     <Btn small label="Down" icon="chevron-down" variant="secondary" disabled={i === tickets.length - 1} onPress={() => onReorder(t.id, i + 1)} />
                   </>
                 ) : null}
-                <Btn small label="Print" icon="printer" variant="secondary" onPress={() => onReprint(t)} />
-                {chefMode ? <Btn small label="Start Cooking" icon="play" variant="success" onPress={() => onStart(t.id)} /> : null}
+                {onReprint ? <Btn small label="Print" icon="printer" variant="secondary" onPress={() => onReprint(t)} /> : null}
+                {onStart ? <Btn small label="Start Cooking" icon="play" variant="success" onPress={() => onStart(t.id)} /> : null}
               </View>
             </TicketCard>
           </View>

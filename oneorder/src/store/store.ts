@@ -14,11 +14,13 @@ import type {
   Customer,
   GstSettings,
   MenuItem,
+  NotificationSettings,
   OrderType,
   PaymentMethod,
   PrinterSettings,
   Settings,
   State,
+  WaiterSettings,
 } from '../domain/types';
 
 export type TabKey = 'order' | 'tables' | 'kitchen' | 'menu' | 'users' | 'dashboard' | 'dev';
@@ -26,6 +28,7 @@ export type TabKey = 'order' | 'tables' | 'kitchen' | 'menu' | 'users' | 'dashbo
 const UNLOCK_MS = 10 * 60 * 1000;
 const tapGuard = makeTapGuard(150);
 const CHEF_MODE_PREF_KEY = 'chefMode';
+const WAITER_SESSION_PREF_KEY = 'waiterId';
 
 interface StoreShape {
   ready: boolean;
@@ -37,6 +40,9 @@ interface StoreShape {
   unlockedUntil: number;
   /** Per-device, never synced - see db/sqlite.ts's device_prefs table. */
   chefMode: boolean;
+  /** Per-device, never synced - same reasoning as chefMode: which waiter is using THIS tablet
+   * right now is a device fact, not a business fact that should propagate anywhere else. */
+  loggedInWaiterId: string | null;
   init: () => Promise<void>;
   retrySave: () => void;
   setTab: (t: TabKey) => void;
@@ -44,9 +50,12 @@ interface StoreShape {
   enterChefMode: () => void;
   /** Returns false (does nothing) on a wrong PIN. */
   exitChefMode: (pin: string) => boolean;
+  /** Returns false (does nothing) on a wrong/disabled account, or while Chef Mode is active. */
+  loginWaiter: (username: string, password: string) => boolean;
+  logoutWaiter: () => void;
 
-  newOrder: (type: OrderType) => string;
-  openTable: (tableId: string) => { sessionId: string; redirected: boolean };
+  newOrder: (type: OrderType, openedBy?: string) => string;
+  openTable: (tableId: string, openedBy?: string) => { sessionId: string; redirected: boolean };
   assignTableToActive: (tableId: string) => ops.AssignResult | null;
   quickAdd: (itemId: string) => boolean;
   addCustom: (itemId: string, qty: number, note: string) => void;
@@ -64,6 +73,7 @@ interface StoreShape {
 
   startTicket: (id: string) => void;
   markReady: (id: string) => void;
+  markServed: (id: string) => void;
   reorderPending: (id: string, toIndex: number) => void;
 
   saveTables: (draft: ops.TableMap) => string | null;
@@ -76,6 +86,8 @@ interface StoreShape {
   setGst: (patch: Partial<GstSettings>) => void;
   setBill: (patch: Partial<BillSettings>) => void;
   setPrinterSettings: (patch: Partial<PrinterSettings>) => void;
+  setWaiterSettings: (patch: Partial<WaiterSettings>) => void;
+  setNotificationSettings: (patch: Partial<NotificationSettings>) => void;
   verifyPin: (pin: string) => { ok: boolean; waitMs: number };
   isUnlocked: (now?: number) => boolean;
   lock: () => void;
@@ -145,11 +157,13 @@ export const useStore = create<StoreShape>((set, get) => {
     activeSessionId: null,
     unlockedUntil: 0,
     chefMode: false,
+    loggedInWaiterId: null,
 
     async init() {
       try {
         const chefModePref = await getDevicePref(CHEF_MODE_PREF_KEY);
         if (chefModePref === '1') set({ chefMode: true });
+        const waiterPref = await getDevicePref(WAITER_SESSION_PREF_KEY);
         const { state, count } = await loadState();
         let data = state;
         if (count === 0 || !data.settings.main) {
@@ -165,7 +179,17 @@ export const useStore = create<StoreShape>((set, get) => {
           await queue;
         }
         const open = ops.openSessions(data);
-        set({ data, ready: true, activeSessionId: open.length ? open[0].id : null, loadError: null });
+        // Re-validated against the loaded accounts, not just trusted blindly - an admin may have
+        // removed or disabled this waiter while the device was offline.
+        const waiterStillValid = waiterPref && data.settings.main?.waiter?.accounts.some((a) => a.id === waiterPref && a.active);
+        if (waiterPref && !waiterStillValid) setDevicePref(WAITER_SESSION_PREF_KEY, '').catch(() => {});
+        set({
+          data,
+          ready: true,
+          activeSessionId: open.length ? open[0].id : null,
+          loadError: null,
+          loggedInWaiterId: waiterStillValid ? waiterPref : null,
+        });
         // Merges a doc that just arrived from another device straight into live state - a direct
         // set(), not commit(), since commit()'s diffStates()+enqueue() is for locally-originated
         // edits and would just push this same doc right back out to every other device.
@@ -213,17 +237,33 @@ export const useStore = create<StoreShape>((set, get) => {
       return true;
     },
 
-    newOrder(type) {
+    loginWaiter(username, password) {
+      if (get().chefMode) return false;
+      const name = username.trim();
+      const accounts = get().data.settings.main.waiter.accounts;
+      const acct = accounts.find((a) => a.active && a.username === name);
+      if (!acct || hashPin(password, acct.passwordSalt) !== acct.passwordHash) return false;
+      set({ loggedInWaiterId: acct.id, activeSessionId: null, tab: 'order' });
+      setDevicePref(WAITER_SESSION_PREF_KEY, acct.id).catch(() => {});
+      return true;
+    },
+
+    logoutWaiter() {
+      set({ loggedInWaiterId: null, activeSessionId: null });
+      setDevicePref(WAITER_SESSION_PREF_KEY, '').catch(() => {});
+    },
+
+    newOrder(type, openedBy) {
       const prev = get().data;
-      const r = ops.createSession(prev, type, Date.now(), null);
+      const r = ops.createSession(prev, type, Date.now(), null, openedBy);
       set({ data: r.state, activeSessionId: r.sessionId });
       enqueue(diffStates(prev, r.state));
       return r.sessionId;
     },
 
-    openTable(tableId) {
+    openTable(tableId, openedBy) {
       const prev = get().data;
-      const r = ops.createSession(prev, 'dine-in', Date.now(), tableId);
+      const r = ops.createSession(prev, 'dine-in', Date.now(), tableId, openedBy);
       if (r.state !== prev) {
         set({ data: r.state });
         enqueue(diffStates(prev, r.state));
@@ -311,6 +351,9 @@ export const useStore = create<StoreShape>((set, get) => {
     markReady(id) {
       commit((d) => ops.markReady(d, id, Date.now()));
     },
+    markServed(id) {
+      commit((d) => ops.markServed(d, id, Date.now()));
+    },
     reorderPending(id, toIndex) {
       commit((d) => ops.reorderPending(d, id, toIndex));
     },
@@ -355,6 +398,12 @@ export const useStore = create<StoreShape>((set, get) => {
     },
     setPrinterSettings(patch) {
       withSettings((s) => ({ ...s, printer: { ...s.printer, ...patch } }));
+    },
+    setWaiterSettings(patch) {
+      withSettings((s) => ({ ...s, waiter: { ...s.waiter, ...patch } }));
+    },
+    setNotificationSettings(patch) {
+      withSettings((s) => ({ ...s, notifications: { ...s.notifications, ...patch } }));
     },
 
     verifyPin(pin) {

@@ -380,6 +380,10 @@ function OrderDetail({ id, onClose }: { id: string | null; onClose: () => void }
   const lines = consolidateLines(s.lines);
   const totals = sessionTotals(s, data.settings.main.gst);
   const label = s.tableId ? data.tables[s.tableId]?.label : undefined;
+  const waiterName = s.openedBy ? data.settings.main.waiter.accounts.find((a) => a.id === s.openedBy)?.username ?? 'Removed waiter' : 'Counter';
+  const tickets = Object.values(data.tickets)
+    .filter((t) => t.sessionId === s.id)
+    .sort((a, b) => a.round - b.round);
   return (
     <Modal visible onClose={onClose} title={`Order #${s.orderNo}`} width={480}>
       <Text style={styles.detailMeta}>
@@ -387,10 +391,23 @@ function OrderDetail({ id, onClose }: { id: string | null; onClose: () => void }
         {s.type === 'dine-in' ? 'Dine-in' : s.type === 'takeaway' ? 'Takeaway' : 'Delivery'} · {fmtTime(s.paidAt as number)} ·{' '}
         {new Date(s.paidAt as number).toLocaleDateString()}
       </Text>
+      <Text style={styles.detailMeta}>Opened by: {waiterName}</Text>
       {s.customerName || s.customerPhone ? (
         <Text style={styles.detailMeta}>
           Customer: {s.customerName || '—'} {s.customerPhone ? `(${s.customerPhone})` : ''}
         </Text>
+      ) : null}
+      {tickets.length > 0 ? (
+        <View style={{ marginBottom: 6 }}>
+          {tickets.map((t) => (
+            <Text key={t.id} style={styles.axis}>
+              Round {t.round}: sent {fmtTime(t.sentAt)}
+              {t.startedAt ? ` · cooking ${fmtTime(t.startedAt)}` : ''}
+              {t.readyAt ? ` · ready ${fmtTime(t.readyAt)}` : ''}
+              {t.servedAt ? ` · served ${fmtTime(t.servedAt)}` : ''}
+            </Text>
+          ))}
+        </View>
       ) : null}
       <View style={styles.detailBox}>
         {lines.map((l) => (

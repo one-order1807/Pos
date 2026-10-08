@@ -1,4 +1,4 @@
-import type { Category, Customer, GstLine, MenuItem, PrinterDevice, Session, Settings, State, TableDef } from './types';
+import type { Category, Customer, GstLine, MenuItem, PrinterDevice, Session, Settings, State, TableDef, WaiterAccount } from './types';
 
 export const BACKUP_VERSION = 1;
 
@@ -22,6 +22,11 @@ export function stripSecrets(s: Settings) {
   // potentially crash-inducing if something ever tried to read it) once restored onto a
   // different device or after a reinstall. The logo image itself already travels as
   // self-contained base64 data in bill.logoRaster, so the path isn't needed at all.
+  //
+  // Waiter accounts (including their password hash/salt) are NOT stripped here, unlike the admin
+  // PIN above - they're synced, portable business data (the same account list every tablet needs
+  // to recognize logins against), not a single device-local secret, so a backup/restore needs to
+  // carry them faithfully or every waiter login breaks after every restore.
   return { ...rest, bill: { ...rest.bill, logoUri: '' } };
 }
 
@@ -98,6 +103,42 @@ function sanitizePrinterSettings(incoming: unknown, fallback: Settings['printer'
     return { templateId, devices: [{ id: p.deviceId, name, role: 'both' }] };
   }
   return { templateId, devices: fallback.devices };
+}
+
+function isValidWaiterAccount(v: unknown): v is WaiterAccount {
+  if (!v || typeof v !== 'object') return false;
+  const a = v as Record<string, unknown>;
+  return (
+    typeof a.id === 'string' &&
+    typeof a.username === 'string' &&
+    typeof a.passwordHash === 'string' &&
+    typeof a.passwordSalt === 'string' &&
+    typeof a.canPrintCustomerBill === 'boolean' &&
+    typeof a.active === 'boolean'
+  );
+}
+
+/** Defensively repairs a restored waiter-settings object - a missing/foreign `waiter` field (any
+ * backup made before this feature existed) must fall back cleanly instead of crashing the restore. */
+function sanitizeWaiterSettings(incoming: unknown, fallback: Settings['waiter']): Settings['waiter'] {
+  if (!incoming || typeof incoming !== 'object') return fallback;
+  const w = incoming as Record<string, unknown>;
+  const enabled = typeof w.enabled === 'boolean' ? w.enabled : fallback.enabled;
+  if (Array.isArray(w.accounts)) {
+    return { enabled, accounts: w.accounts.filter(isValidWaiterAccount) };
+  }
+  return { enabled, accounts: fallback.accounts };
+}
+
+/** Defensively repairs a restored notification-settings object, same reasoning as above. */
+function sanitizeNotificationSettings(incoming: unknown, fallback: Settings['notifications']): Settings['notifications'] {
+  if (!incoming || typeof incoming !== 'object') return fallback;
+  const n = incoming as Record<string, unknown>;
+  return {
+    soundEnabled: typeof n.soundEnabled === 'boolean' ? n.soundEnabled : fallback.soundEnabled,
+    vibrationEnabled: typeof n.vibrationEnabled === 'boolean' ? n.vibrationEnabled : fallback.vibrationEnabled,
+    repeatSeconds: typeof n.repeatSeconds === 'number' ? n.repeatSeconds : fallback.repeatSeconds,
+  };
 }
 
 export function buildBackup(state: State, now: number): BackupFile {
@@ -184,6 +225,8 @@ export function applyBackup(current: State, backup: BackupFile): State {
         bill: sanitizeBillSettings(incoming.bill, cur.bill),
         gst: sanitizeGstSettings(incoming.gst, cur.gst),
         printer: sanitizePrinterSettings(incoming.printer, cur.printer),
+        waiter: sanitizeWaiterSettings(incoming.waiter, cur.waiter),
+        notifications: sanitizeNotificationSettings(incoming.notifications, cur.notifications),
       }
     : cur;
   const sessions = byId(backup.data.sessions);

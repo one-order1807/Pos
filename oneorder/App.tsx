@@ -9,6 +9,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useStore } from './src/store/store';
+import { ensureTicketReadyChannels } from './src/notifications/ticketReady';
 import { Btn, Skeleton } from './src/ui/components';
 import { BubbleController } from './src/ui/BubbleController';
 import { ErrorBoundary } from './src/ui/ErrorBoundary';
@@ -46,6 +47,7 @@ export default function App() {
 
   useEffect(() => {
     init();
+    ensureTicketReadyChannels();
   }, [init]);
 
   if (!fontsLoaded && !fontError) return <View style={styles.blank} />;

@@ -4,6 +4,28 @@ One short entry per release: what changed, what was fixed, and the version it sh
 the answer to "what changed, is this done, what's in this build" going forward — keep it updated
 every round rather than reconstructing it from chat history later.
 
+## v1.5.0 — 2026-10-08 (Waiter Mode, Phase 1)
+
+- Added: Waiter Mode. Dev Mode gets a Waiter Mode toggle and waiter account management (username,
+  password, a per-waiter "can print the Customer Bill" permission, and an active/disabled switch).
+  When enabled, a "Waiter login" button appears on the main screen; logging in switches that
+  device into a restricted, mobile-friendly, dine-in-only view with two sections - Order (pick a
+  table, take the order, send it to the kitchen - reusing the same item grid and cart as the main
+  Order tab) and Status (that waiter's own tickets, Pending → Cooking → Ready, with a "Served"
+  button once food is delivered). Logging out just needs a tap and confirm.
+- Added: the Customer Bill permission is enforced at the one real print function itself, not just
+  a hidden button, so it can't be bypassed through the combined-bill-print path either. Cook Bill
+  printing is unaffected for every waiter - only the customer-facing bill is restricted.
+- Added: a waiter gets a notification (sound + vibration, configurable in Dev Mode, including an
+  optional repeat interval) the moment the kitchen marks one of their own tickets ready - fires
+  correctly regardless of which device/tablet actually marked it ready.
+- Added: every order now records which waiter opened it (blank for the normal counter/admin flow);
+  the Dashboard's order detail view shows that waiter's name and the full sent → cooking → ready →
+  served timing trail for the order's tickets.
+- Known gaps, flagged rather than silently skipped: no "Cancelled" ticket status yet; the
+  Order/Status switch is tap-based, not a swipeable pager; notification sound is the Android
+  system default tone, not a custom ringtone. All reasonable follow-ups, not needed for this round.
+
 ## v1.4.0 — 2026-10-08 (Round 7)
 
 - Added: Printer panel now shows a "Remembered printers" section for known printers that are off

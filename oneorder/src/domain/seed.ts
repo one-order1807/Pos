@@ -27,6 +27,8 @@ export function defaultSettings(): Settings {
       fssaiNumber: '',
     },
     printer: { templateId: 't2', devices: [] },
+    waiter: { enabled: false, accounts: [] },
+    notifications: { soundEnabled: true, vibrationEnabled: true, repeatSeconds: 0 },
     pinHash: hashPin(DEFAULT_DEV_PIN, salt),
     pinSalt: salt,
     orderCounter: { date: '', n: 0 },
