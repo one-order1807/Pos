@@ -266,16 +266,22 @@ function PendingList({
               timeLabel="Sent"
               style={isDrag ? { ...(shadow as object), borderColor: colors.primary } : undefined}
               handle={
-                <View style={styles.handleWrap}>
-                  <View {...pans.current[t.id].panHandlers} style={styles.handle} accessibilityLabel="Drag to change cook order">
-                    <Icon name="menu" size={20} color={colors.textSoft} />
+                chefMode ? undefined : (
+                  <View style={styles.handleWrap}>
+                    <View {...pans.current[t.id].panHandlers} style={styles.handle} accessibilityLabel="Drag to change cook order">
+                      <Icon name="menu" size={20} color={colors.textSoft} />
+                    </View>
                   </View>
-                </View>
+                )
               }
             >
               <View style={styles.btnRow}>
-                <Btn small label="Up" icon="chevron-up" variant="secondary" disabled={i === 0} onPress={() => onReorder(t.id, i - 1)} />
-                <Btn small label="Down" icon="chevron-down" variant="secondary" disabled={i === tickets.length - 1} onPress={() => onReorder(t.id, i + 1)} />
+                {!chefMode ? (
+                  <>
+                    <Btn small label="Up" icon="chevron-up" variant="secondary" disabled={i === 0} onPress={() => onReorder(t.id, i - 1)} />
+                    <Btn small label="Down" icon="chevron-down" variant="secondary" disabled={i === tickets.length - 1} onPress={() => onReorder(t.id, i + 1)} />
+                  </>
+                ) : null}
                 <Btn small label="Print" icon="printer" variant="secondary" onPress={() => onReprint(t)} />
                 {chefMode ? <Btn small label="Start Cooking" icon="play" variant="success" onPress={() => onStart(t.id)} /> : null}
               </View>

@@ -4,6 +4,26 @@ One short entry per release: what changed, what was fixed, and the version it sh
 the answer to "what changed, is this done, what's in this build" going forward — keep it updated
 every round rather than reconstructing it from chat history later.
 
+## v1.4.0 — 2026-10-08 (Round 7)
+
+- Added: Printer panel now shows a "Remembered printers" section for known printers that are off
+  or out of range right now (not currently connected and not in an active scan), each with a direct
+  Reconnect button - previously the only way back to a known printer was starting a fresh scan.
+- Changed: deleting a table in Arrange mode is now drag-the-table-onto-the-bin-icon instead of
+  tapping a small trash icon on the card, with a dedicated bin drop target at the bottom of the
+  screen - replaces the old per-card tap-to-delete entirely.
+- Changed: Chef Mode's Kitchen view no longer shows the Up/Down reorder buttons or the drag handle
+  on pending tickets - a chef works tickets in the order they arrive. The admin Kitchen view keeps
+  both reordering controls, unchanged.
+- Changed: table/order status colors are now consistent everywhere (Tables tab, Table Picker,
+  Dashboard's live table panel) and color-blind-friendlier for this app's convention - free is
+  neutral gray, occupied is green, cooking is orange, payment-pending is red. Previously `available`
+  vs. everything else was the only distinction drawn on the Tables/Table-Picker screens, and the
+  Dashboard panel disagreed with itself (its color-coded dots and its summary counts used two
+  different color schemes for the same four statuses).
+- Added: `FLOW.md` on a new `docs/flow` branch - documents the real end-to-end order → kitchen →
+  bill workflow and a full feature list, as a living reference independent of feature work.
+
 ## v1.3.1 — 2026-10-02
 
 - Fixed: uploading a logo in Dev Mode (Bill setup) could fail with "Not a PNG file" even for a

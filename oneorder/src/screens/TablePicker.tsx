@@ -13,9 +13,23 @@ export const STATUS_TEXT = {
   payment: 'Payment pending',
 } as const;
 
+const STATUS_COLOR = {
+  available: colors.textSoft,
+  occupied: colors.green,
+  cooking: colors.coral,
+  payment: colors.red,
+} as const;
+
 export function statusColor(status: keyof typeof STATUS_TEXT): string {
-  return status === 'available' ? colors.green : colors.red;
+  return STATUS_COLOR[status];
 }
+
+export const STATUS_BG = {
+  available: colors.muted,
+  occupied: '#F0FDF4',
+  cooking: '#FFF7ED',
+  payment: '#FEF2F2',
+} as const;
 
 export function TablePicker({
   visible,
@@ -34,10 +48,12 @@ export function TablePicker({
   return (
     <Modal visible={visible} onClose={onClose} title={title} width={620}>
       <View style={styles.legend}>
-        <Dot color={colors.green} />
-        <Text style={styles.legendText}>Free — starts a new order</Text>
-        <Dot color={colors.red} />
-        <Text style={styles.legendText}>Active — opens its existing order</Text>
+        {(Object.keys(STATUS_TEXT) as (keyof typeof STATUS_TEXT)[]).map((st) => (
+          <React.Fragment key={st}>
+            <Dot color={statusColor(st)} />
+            <Text style={styles.legendText}>{STATUS_TEXT[st]}</Text>
+          </React.Fragment>
+        ))}
       </View>
       {tables.length === 0 ? (
         <EmptyState icon="grid" text="No tables yet. Add tables in Tables > Arrange." />
@@ -53,7 +69,7 @@ export function TablePicker({
                   accessibilityRole="button"
                   accessibilityLabel={`${t.label} ${STATUS_TEXT[status]}`}
                   onPress={() => onPick(t.id)}
-                  style={[styles.cell, status !== 'available' && { borderColor: colors.red, backgroundColor: '#FEF2F2' }]}
+                  style={[styles.cell, status !== 'available' && { borderColor: statusColor(status), backgroundColor: STATUS_BG[status] }]}
                 >
                   <View style={styles.cellTop}>
                     <Dot color={statusColor(status)} />

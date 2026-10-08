@@ -27,7 +27,7 @@ import type { TableDef, TableStatus } from '../domain/types';
 import { useStore } from '../store/store';
 import { Btn, Chip, Confirm, Dot, EmptyState, Field, Icon, Modal, toast, useNow } from '../ui/components';
 import { colors, fonts, shadow } from '../ui/theme';
-import { STATUS_TEXT, statusColor } from './TablePicker';
+import { STATUS_BG, STATUS_TEXT, statusColor } from './TablePicker';
 
 type Mode = null | 'labels' | 'merge' | 'arrange';
 const CARD_W = 118;
@@ -57,6 +57,8 @@ export function TablesScreen() {
   const scroll = useRef({ x: 0, y: 0 });
   const canvasOrigin = useRef({ x: 0, y: 0 });
   const canvasRef = useRef<View>(null);
+  const dustbinRef = useRef<View>(null);
+  const dustbinBounds = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const editing = draft !== null;
   const tablesMap = draft ?? data.tables;
@@ -199,7 +201,7 @@ export function TablesScreen() {
           <Text style={styles.bannerText}>
             {mode === 'labels' && 'Tap a table to rename it.'}
             {mode === 'merge' && 'Tap 2 or more free tables, then Merge. Tap a merged table to unmerge it.'}
-            {mode === 'arrange' && 'Drag tables anywhere. Drag the + token onto the canvas to add a table.'}
+            {mode === 'arrange' && 'Drag tables anywhere, or onto the bin to delete. Drag the + token onto the canvas to add a table.'}
             {' '}Changes apply only when you press Save.
           </Text>
           {mode === 'merge' ? (
@@ -248,6 +250,7 @@ export function TablesScreen() {
                         else setDraft(r.tables);
                       }}
                       setDragging={setDragging}
+                      dustbinBounds={dustbinBounds}
                     />
                   ))}
                 </View>
@@ -264,6 +267,15 @@ export function TablesScreen() {
               onTap={() => addAt(20 + scroll.current.x, 20 + scroll.current.y)}
               setDragging={setDragging}
             />
+          ) : null}
+          {mode === 'arrange' ? (
+            <View
+              ref={dustbinRef}
+              style={styles.dustbin}
+              onLayout={() => dustbinRef.current?.measureInWindow((x, y, w, h) => (dustbinBounds.current = { x, y, w, h }))}
+            >
+              <Icon name="trash-2" size={24} color="#fff" />
+            </View>
           ) : null}
         </View>
       ) : (
@@ -356,6 +368,7 @@ function TableCard({
   onMove,
   onDelete,
   setDragging,
+  dustbinBounds,
 }: {
   t: TableDef;
   mode: Mode;
@@ -366,13 +379,14 @@ function TableCard({
   onMove: (x: number, y: number) => void;
   onDelete: () => void;
   setDragging: (d: boolean) => void;
+  dustbinBounds?: React.RefObject<{ x: number; y: number; w: number; h: number } | null>;
 }) {
   const data = useStore((s) => s.data);
   const status = tableStatus(data, t.id);
   const s = activeSessionForTable(data, t.id);
   const start = useRef({ x: 0, y: 0 });
-  const latest = useRef({ x: t.x, y: t.y, onMove });
-  latest.current = { x: t.x, y: t.y, onMove };
+  const latest = useRef({ x: t.x, y: t.y, onMove, onDelete });
+  latest.current = { x: t.x, y: t.y, onMove, onDelete };
   const moved = useRef(false);
 
   const pan = useMemo(
@@ -390,10 +404,16 @@ function TableCard({
           if (Math.abs(g.dx) + Math.abs(g.dy) > 4) moved.current = true;
           latest.current.onMove(Math.round((start.current.x + g.dx) / 10) * 10, Math.round((start.current.y + g.dy) / 10) * 10);
         },
-        onPanResponderRelease: () => setDragging(false),
+        onPanResponderRelease: (_e, g) => {
+          setDragging(false);
+          const db = dustbinBounds?.current;
+          if (db && g.moveX >= db.x && g.moveX <= db.x + db.w && g.moveY >= db.y && g.moveY <= db.y + db.h) {
+            latest.current.onDelete();
+          }
+        },
         onPanResponderTerminate: () => setDragging(false),
       }),
-    [setDragging],
+    [setDragging, dustbinBounds],
   );
 
   const dot = mode === 'arrange' ? colors.textSoft : statusColor(status);
@@ -402,7 +422,7 @@ function TableCard({
       style={[
         styles.card,
         { left: t.x, top: t.y },
-        status !== 'available' && mode === null && { borderColor: colors.red, backgroundColor: '#FEF2F2' },
+        status !== 'available' && mode === null && { borderColor: statusColor(status), backgroundColor: STATUS_BG[status] },
         selected && { borderColor: colors.primary, backgroundColor: colors.primaryTint, borderWidth: 2 },
         t.members ? { borderStyle: 'dashed' } : null,
       ]}
@@ -424,11 +444,6 @@ function TableCard({
         {mode === null && s?.startedAt ? ` · ${formatDuration(now - s.startedAt)}` : ''}
         {mode === 'merge' && locked ? ' · in use' : ''}
       </Text>
-      {mode === 'arrange' && !t.members ? (
-        <Pressable style={styles.del} onPress={onDelete} accessibilityLabel={`Remove ${t.label}`} hitSlop={8}>
-          <Icon name="trash-2" size={16} color={colors.red} />
-        </Pressable>
-      ) : null}
     </View>
   );
 
@@ -536,7 +551,6 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   cardLabel: { flex: 1, fontFamily: fonts.semibold, fontSize: 16, color: colors.text },
   cardSub: { fontFamily: fonts.body, fontSize: 11, color: colors.textSoft },
-  del: { position: 'absolute', right: 6, bottom: 6, width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   token: {
     position: 'absolute',
     right: 20,
@@ -545,6 +559,18 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     backgroundColor: colors.teal,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...(shadow as object),
+  },
+  dustbin: {
+    position: 'absolute',
+    left: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.red,
     alignItems: 'center',
     justifyContent: 'center',
     ...(shadow as object),

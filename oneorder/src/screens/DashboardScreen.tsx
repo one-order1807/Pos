@@ -279,10 +279,10 @@ export function DashboardScreen() {
             ) : (
               <>
                 <View style={styles.tierRow}>
-                  <Stat label="Free" value={liveCounts.available} color={colors.green} />
-                  <Stat label="Occupied" value={liveCounts.occupied} color={colors.red} />
-                  <Stat label="Cooking" value={liveCounts.cooking} color={colors.coral} />
-                  <Stat label="Payment" value={liveCounts.payment} color={colors.amber} />
+                  <Stat label="Free" value={liveCounts.available} color={statusColor('available')} />
+                  <Stat label="Occupied" value={liveCounts.occupied} color={statusColor('occupied')} />
+                  <Stat label="Cooking" value={liveCounts.cooking} color={statusColor('cooking')} />
+                  <Stat label="Payment" value={liveCounts.payment} color={statusColor('payment')} />
                 </View>
                 <View style={styles.liveGrid}>
                   {live.map(({ t, status, s }) => (

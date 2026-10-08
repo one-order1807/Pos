@@ -112,6 +112,25 @@ export function PrinterPanel({ active = true }: { active?: boolean }) {
         </View>
       ) : null}
 
+      {devices.some((d) => !connectedIds.has(d.id)) ? (
+        <View style={{ marginBottom: 10 }}>
+          <Text style={styles.sectionLabel}>Remembered printers</Text>
+          {devices
+            .filter((d) => !connectedIds.has(d.id))
+            .map((d) => (
+              <View key={d.id} style={styles.devRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.devName} numberOfLines={1}>
+                    {d.name}
+                  </Text>
+                  <Text style={styles.devSub}>Not connected</Text>
+                </View>
+                <Btn small label="Reconnect" icon="bluetooth" onPress={() => connect(d.id, d.name)} />
+              </View>
+            ))}
+        </View>
+      ) : null}
+
       <View style={styles.btnRow}>
         {scanning ? (
           <Btn small label="Stop scan" icon="square" variant="secondary" onPress={stopScan} />
@@ -237,6 +256,7 @@ const styles = StyleSheet.create({
   statusLabel: { fontFamily: fonts.semibold, fontSize: 18, color: colors.text },
   device: { fontFamily: fonts.body, fontSize: 13, color: colors.textSoft },
   message: { fontFamily: fonts.body, fontSize: 13, color: colors.textSoft, marginVertical: 8, lineHeight: 19 },
+  sectionLabel: { fontFamily: fonts.semibold, fontSize: 12, color: colors.textSoft, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   connRow: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 8, marginBottom: 8 },
   connTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   roleRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 },
