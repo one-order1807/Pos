@@ -29,16 +29,26 @@ jobs:
       - run: npm ci
       - run: npm run check
 
+  # Builds TWO separate Android apps from the same source: the normal admin/counter app, and a
+  # waiter-only app (its own name, its own package id - see app.config.js) that boots straight into
+  # the waiter login instead of the admin Shell. Same JS bundle logic, two native wrappers.
   apk:
-    name: Build APK
+    name: Build APK (${{ matrix.variant }})
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    permissions:
-      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [admin, waiter]
+    outputs:
+      # Identical for both matrix legs (it comes from the shared app.json, unaffected by variant) -
+      # whichever leg's value downstream jobs happen to see is always the same value either way.
+      app_version: ${{ steps.ver.outputs.app_version }}
     env:
       CI: '1'
       NODE_ENV: production
+      APP_VARIANT: ${{ matrix.variant }}
       # Optional Firebase config. Leave the secrets unset to build a fully offline app.
       EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.EXPO_PUBLIC_FIREBASE_API_KEY }}
       EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN }}
@@ -73,13 +83,16 @@ jobs:
       - run: npm ci
 
       - name: Bump the Android versionCode for this build
+        id: ver
         shell: bash
         run: |
           set -e
           tmp=$(mktemp)
           jq --argjson vc "$GITHUB_RUN_NUMBER" '.expo.android.versionCode = $vc' app.json > "$tmp"
           mv "$tmp" app.json
-          echo "app_version=$(jq -r '.expo.version' app.json)" >> "$GITHUB_ENV"
+          V=$(jq -r '.expo.version' app.json)
+          echo "app_version=$V" >> "$GITHUB_ENV"
+          echo "app_version=$V" >> "$GITHUB_OUTPUT"
 
       - name: Generate the native Android project
         shell: bash
@@ -185,58 +198,81 @@ jobs:
 
       - name: Name the APK
         id: apk
+        shell: bash
         run: |
           set -e
+          if [ "${{ matrix.variant }}" = "waiter" ]; then BASE="ONEORDER-W"; else BASE="ONEORDER"; fi
           SHORT=$(echo "${GITHUB_SHA}" | cut -c1-7)
-          NAME="ONEORDER-${SHORT}.apk"
+          NAME="${BASE}-${SHORT}.apk"
           cp android/app/build/outputs/apk/release/app-release.apk "${NAME}"
-          # A second copy under a fixed name, so releases/latest/download/ONEORDER.apk always
-          # resolves to the newest build without the download link changing every time.
-          cp android/app/build/outputs/apk/release/app-release.apk ONEORDER.apk
-          ls -lh "${NAME}" ONEORDER.apk
+          # A second copy under a fixed name, so releases/latest/download/<BASE>.apk always
+          # resolves to the newest build of that variant without the download link ever changing.
+          cp android/app/build/outputs/apk/release/app-release.apk "${BASE}.apk"
+          ls -lh "${NAME}" "${BASE}.apk"
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "fixed=${BASE}.apk" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ONEORDER-apk
-          path: oneorder/${{ steps.apk.outputs.name }}
+          name: oneorder-${{ matrix.variant }}-apk
+          path: |
+            oneorder/${{ steps.apk.outputs.name }}
+            oneorder/${{ steps.apk.outputs.fixed }}
           if-no-files-found: error
           retention-days: 30
 
-      # Publishes a real GitHub Release with the raw .apk attached (not a zip, no login needed
-      # while the repo is public) on every push to the default branch, plus on version tags. The
-      # tag embeds both the app's semantic version (app.json) and the CI run number, so every
-      # build gets its own distinct, always-incrementing tag/versionCode - releases/latest always
-      # resolves to the newest one automatically.
+  # Publishes ONE GitHub Release carrying both variants' APKs (4 files: admin's two names, waiter's
+  # two names) on every push to the default branch, plus on version tags. The tag embeds both the
+  # app's semantic version (app.json) and the CI run number, so every build gets its own distinct,
+  # always-incrementing tag/versionCode - releases/latest always resolves to the newest one.
+  release:
+    name: Publish release
+    needs: apk
+    if: |
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: oneorder-*-apk
+          path: artifacts
+          merge-multiple: true
+
       - name: Publish release
-        if: |
-          github.event_name == 'push' &&
-          (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}-{1}', env.app_version, github.run_number) }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ONEORDER v{0} (build {1})', env.app_version, github.run_number) }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}-{1}', needs.apk.outputs.app_version, github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ONE-ORDER v{0} (build {1})', needs.apk.outputs.app_version, github.run_number) }}
           make_latest: true
           generate_release_notes: true
-          files: |
-            oneorder/${{ steps.apk.outputs.name }}
-            oneorder/ONEORDER.apk
+          files: artifacts/*.apk
 
-      # The in-app "check for update" (src/update/check.ts) reads a tiny public JSON manifest from
-      # a SEPARATE, empty public repo - one-order1807/oneorder-updates - so it keeps working with a
-      # plain unauthenticated request even once this source repo goes private, and so each client
-      # branch can later publish its own channels/<name>.json without exposing anyone else's. This
-      # step needs a UPDATES_REPO_TOKEN repository secret (a fine-grained PAT scoped to just that
-      # one public repo, Contents: Read and write) - it's a no-op with a warning until that secret
-      # is added, so the main build/release never depends on it.
-      - name: Publish the update-check manifest
-        if: |
-          github.event_name == 'push' &&
-          (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
-        env:
-          UPDATES_REPO_TOKEN: ${{ secrets.UPDATES_REPO_TOKEN }}
-          UPDATES_REPO: one-order1807/oneorder-updates
-          CHANNEL: default
+  # The in-app "check for update" (src/update/check.ts) reads a tiny public JSON manifest from a
+  # SEPARATE, empty public repo - one-order1807/oneorder-updates - so it keeps working with a plain
+  # unauthenticated request even once this source repo goes private. Each app variant has its own
+  # channel (see app.config.js's extra.updateChannel) and its own apkUrl, so the waiter app's update
+  # check can never point someone at the admin app's .apk or vice versa. Needs an UPDATES_REPO_TOKEN
+  # repository secret (a fine-grained PAT scoped to just that one public repo, Contents: Read and
+  # write) - it's a no-op with a notice until that secret is added, so the release never depends on it.
+  update-manifest:
+    name: Publish update manifest (${{ matrix.variant }})
+    needs: [apk, release]
+    if: |
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        variant: [admin, waiter]
+    env:
+      UPDATES_REPO_TOKEN: ${{ secrets.UPDATES_REPO_TOKEN }}
+      UPDATES_REPO: one-order1807/oneorder-updates
+      app_version: ${{ needs.apk.outputs.app_version }}
+    steps:
+      - name: Publish
         shell: bash
         run: |
           set -e
@@ -244,8 +280,9 @@ jobs:
             echo "::notice::Skipped publishing the update-check manifest - add an UPDATES_REPO_TOKEN repository secret to enable in-app update checks."
             exit 0
           fi
+          if [ "${{ matrix.variant }}" = "waiter" ]; then CHANNEL="waiter"; BASE="ONEORDER-W"; else CHANNEL="default"; BASE="ONEORDER"; fi
           TAG="v${app_version}-${GITHUB_RUN_NUMBER}"
-          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/ONEORDER.apk"
+          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${BASE}.apk"
           MANIFEST=$(jq -n \
             --argjson versionCode "$GITHUB_RUN_NUMBER" \
             --arg version "$app_version" \
@@ -257,15 +294,15 @@ jobs:
           API="https://api.github.com/repos/${UPDATES_REPO}/contents/channels/${CHANNEL}.json"
           SHA=$(curl -s -H "Authorization: token ${UPDATES_REPO_TOKEN}" "$API" | jq -r '.sha // empty')
           if [ -n "$SHA" ]; then
-            PAYLOAD=$(jq -n --arg msg "Publish ${TAG}" --arg content "$CONTENT_B64" --arg sha "$SHA" '{message: $msg, content: $content, sha: $sha}')
+            PAYLOAD=$(jq -n --arg msg "Publish ${TAG} (${{ matrix.variant }})" --arg content "$CONTENT_B64" --arg sha "$SHA" '{message: $msg, content: $content, sha: $sha}')
           else
-            PAYLOAD=$(jq -n --arg msg "Publish ${TAG}" --arg content "$CONTENT_B64" '{message: $msg, content: $content}')
+            PAYLOAD=$(jq -n --arg msg "Publish ${TAG} (${{ matrix.variant }})" --arg content "$CONTENT_B64" '{message: $msg, content: $content}')
           fi
           CODE=$(curl -s -o /tmp/manifest-publish.json -w '%{http_code}' -X PUT \
             -H "Authorization: token ${UPDATES_REPO_TOKEN}" -H "Content-Type: application/json" \
             -d "$PAYLOAD" "$API")
           echo "manifest publish HTTP ${CODE}"
           if [ "$CODE" -ge 300 ]; then
-            echo "::warning::Failed to publish the update manifest (HTTP ${CODE}) - the app's in-app update check will just not see this build. See ${UPDATES_REPO}."
+            echo "::warning::Failed to publish the ${{ matrix.variant }} update manifest (HTTP ${CODE}) - that variant's in-app update check will just not see this build. See ${UPDATES_REPO}."
             cat /tmp/manifest-publish.json
           fi

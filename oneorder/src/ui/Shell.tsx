@@ -38,8 +38,7 @@ export function Shell() {
   const chefMode = useStore((s) => s.chefMode);
   const exitChefMode = useStore((s) => s.exitChefMode);
   const loggedInWaiterId = useStore((s) => s.loggedInWaiterId);
-  const logoutWaiter = useStore((s) => s.logoutWaiter);
-  const waiterSettings = useStore((s) => s.data.settings.main.waiter);
+  const waiterModeEnabled = useStore((s) => s.data.settings.main.waiter.enabled);
   const tableMode = useStore((s) => s.data.settings.main.tableMode);
   const printerCfg = useStore((s) => s.data.settings.main.printer);
   const cafeName = useStore((s) => s.data.settings.main.bill.name);
@@ -51,18 +50,6 @@ export function Shell() {
   const [printerOpen, setPrinterOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   const [waiterLoginOpen, setWaiterLoginOpen] = useState(false);
-  const [waiterLogoutOpen, setWaiterLogoutOpen] = useState(false);
-  const [waiterSection, setWaiterSection] = useState<'order' | 'status'>('order');
-  // Always called, regardless of which branch below ends up rendering - Rules of Hooks. The hook
-  // itself no-ops whenever waiterId is null.
-  useTicketReadyWatcher(loggedInWaiterId);
-  const readyToServe = useStore((s) =>
-    loggedInWaiterId
-      ? Object.values(s.data.tickets).filter(
-          (t) => t.status === 'ready' && !t.servedAt && s.data.sessions[t.sessionId]?.openedBy === loggedInWaiterId,
-        ).length
-      : 0,
-  );
 
   useEffect(() => {
     for (const d of printerCfg.devices ?? []) reconnectSaved(d.id, d.name);
@@ -89,7 +76,7 @@ export function Shell() {
           <LogoMark size={34} />
           <View style={styles.lockup}>
             <Text style={styles.cafeName} numberOfLines={1}>
-              {cafeName?.trim() || 'ONEORDER'}
+              {cafeName?.trim() || 'ONE-ORDER'}
             </Text>
             <Text style={styles.chefBadge}>Chef Mode</Text>
           </View>
@@ -139,68 +126,11 @@ export function Shell() {
   // Waiter Mode: a logged-in waiter's phone/tablet, locked down to a dine-in-only ordering view
   // and their own ticket status - no tab bar, same "no way to wander into the rest of the app"
   // posture as Chef Mode above, except logging out just needs a tap+confirm (there's no secret
-  // code to protect here the way Chef Mode's exit PIN protects the kitchen tablet).
+  // code to protect here the way Chef Mode's exit PIN protects the kitchen tablet). Pulled out into
+  // its own component (below) so the dedicated waiter-app build's boot entry (see App.tsx) can
+  // render the exact same view without going through the admin Shell at all.
   if (loggedInWaiterId) {
-    const acct = waiterSettings.accounts.find((a) => a.id === loggedInWaiterId);
-    return (
-      <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
-        <View style={styles.topBar}>
-          <LogoMark size={34} />
-          <View style={styles.lockup}>
-            <Text style={styles.cafeName} numberOfLines={1}>
-              {cafeName?.trim() || 'ONEORDER'}
-            </Text>
-            <Text style={styles.chefBadge}>{acct?.username ?? 'Waiter'}</Text>
-          </View>
-          <View style={{ flex: 1 }} />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Printer ${info.label}. Tap to manage`}
-            onPress={() => setPrinterOpen(true)}
-            style={styles.printerPill}
-          >
-            <Icon name="printer" size={16} color={colors.text} />
-            <Dot color={info.color} />
-            <Text style={styles.printerText}>
-              {printer.connections.length > 1 ? `${printer.connections.length} printers` : printer.status === 'connected' ? 'Connected' : 'Disconnected'}
-            </Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Log out" onPress={() => setWaiterLogoutOpen(true)} style={styles.exitBtn}>
-            <Icon name="log-out" size={18} color={colors.text} />
-          </Pressable>
-        </View>
-
-        <View style={styles.waiterSwitchRow}>
-          <Chip label="Order" active={waiterSection === 'order'} onPress={() => setWaiterSection('order')} />
-          <Chip label={`Status${readyToServe > 0 ? ` (${readyToServe})` : ''}`} active={waiterSection === 'status'} onPress={() => setWaiterSection('status')} />
-        </View>
-
-        {saveError ? (
-          <Pressable style={styles.errBar} onPress={retrySave}>
-            <Icon name="alert-triangle" size={16} color="#fff" />
-            <Text style={styles.errText}>Could not save to this tablet: {saveError}. Tap to retry.</Text>
-          </Pressable>
-        ) : null}
-
-        <View style={{ flex: 1 }}>
-          {waiterSection === 'order' ? <OrderScreen waiterId={loggedInWaiterId} dineInOnly /> : <KitchenScreen waiterId={loggedInWaiterId} />}
-        </View>
-
-        <PrinterModal visible={printerOpen} onClose={() => setPrinterOpen(false)} />
-        <Confirm
-          visible={waiterLogoutOpen}
-          title="Log out?"
-          message="You'll need your username and password to log back in."
-          confirmLabel="Log out"
-          onCancel={() => setWaiterLogoutOpen(false)}
-          onConfirm={() => {
-            logoutWaiter();
-            setWaiterLogoutOpen(false);
-          }}
-        />
-        <ToastHost />
-      </SafeAreaView>
-    );
+    return <WaiterShell />;
   }
 
   return (
@@ -209,7 +139,7 @@ export function Shell() {
         <LogoMark size={34} />
         <View style={styles.lockup}>
           <Text style={styles.cafeName} numberOfLines={1}>
-            {cafeName?.trim() || 'ONEORDER'}
+            {cafeName?.trim() || 'ONE-ORDER'}
           </Text>
           <FadeIn delay={200}>
             <View style={styles.wordmarkRow}>
@@ -241,7 +171,7 @@ export function Shell() {
             );
           })}
         </ScrollView>
-        {waiterSettings.enabled ? (
+        {waiterModeEnabled ? (
           <Pressable accessibilityRole="button" accessibilityLabel="Waiter login" onPress={() => setWaiterLoginOpen(true)} style={styles.printerPill}>
             <Icon name="log-in" size={16} color={colors.text} />
             <Text style={styles.printerText}>Waiter login</Text>
@@ -299,6 +229,100 @@ export function Shell() {
 
       <PrinterModal visible={printerOpen} onClose={() => setPrinterOpen(false)} />
       <WaiterLogin visible={waiterLoginOpen} onClose={() => setWaiterLoginOpen(false)} onLoggedIn={() => setWaiterLoginOpen(false)} />
+      <ToastHost />
+    </SafeAreaView>
+  );
+}
+
+/**
+ * The restricted view a logged-in waiter actually sees - used both from inside the normal admin
+ * Shell (reached via its "Waiter login" button) and as the dedicated waiter-app build's entire UI
+ * once logged in (see App.tsx). Self-contained: reads everything it needs from the store directly
+ * rather than taking props, since both callers just want "whatever the current waiter sees."
+ */
+export function WaiterShell() {
+  const loggedInWaiterId = useStore((s) => s.loggedInWaiterId);
+  const logoutWaiter = useStore((s) => s.logoutWaiter);
+  const waiterAccounts = useStore((s) => s.data.settings.main.waiter.accounts);
+  const cafeName = useStore((s) => s.data.settings.main.bill.name);
+  const saveError = useStore((s) => s.saveError);
+  const retrySave = useStore((s) => s.retrySave);
+  const printer = usePrinter();
+  const [printerOpen, setPrinterOpen] = useState(false);
+  const [waiterLogoutOpen, setWaiterLogoutOpen] = useState(false);
+  const [waiterSection, setWaiterSection] = useState<'order' | 'status'>('order');
+  // Always called, regardless of whether loggedInWaiterId is set - Rules of Hooks. The hook
+  // itself no-ops whenever waiterId is null (shouldn't happen given both callers already gate on
+  // it, but this component stays safe either way rather than assuming).
+  useTicketReadyWatcher(loggedInWaiterId);
+  const readyToServe = useStore((s) =>
+    loggedInWaiterId
+      ? Object.values(s.data.tickets).filter(
+          (t) => t.status === 'ready' && !t.servedAt && s.data.sessions[t.sessionId]?.openedBy === loggedInWaiterId,
+        ).length
+      : 0,
+  );
+
+  if (!loggedInWaiterId) return null;
+  const acct = waiterAccounts.find((a) => a.id === loggedInWaiterId);
+  const info = printerStatusInfo(printer.status);
+
+  return (
+    <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
+      <View style={styles.topBar}>
+        <LogoMark size={34} />
+        <View style={styles.lockup}>
+          <Text style={styles.cafeName} numberOfLines={1}>
+            {cafeName?.trim() || 'ONE-ORDER'}
+          </Text>
+          <Text style={styles.chefBadge}>{acct?.username ?? 'Waiter'}</Text>
+        </View>
+        <View style={{ flex: 1 }} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Printer ${info.label}. Tap to manage`}
+          onPress={() => setPrinterOpen(true)}
+          style={styles.printerPill}
+        >
+          <Icon name="printer" size={16} color={colors.text} />
+          <Dot color={info.color} />
+          <Text style={styles.printerText}>
+            {printer.connections.length > 1 ? `${printer.connections.length} printers` : printer.status === 'connected' ? 'Connected' : 'Disconnected'}
+          </Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Log out" onPress={() => setWaiterLogoutOpen(true)} style={styles.exitBtn}>
+          <Icon name="log-out" size={18} color={colors.text} />
+        </Pressable>
+      </View>
+
+      <View style={styles.waiterSwitchRow}>
+        <Chip label="Order" active={waiterSection === 'order'} onPress={() => setWaiterSection('order')} />
+        <Chip label={`Status${readyToServe > 0 ? ` (${readyToServe})` : ''}`} active={waiterSection === 'status'} onPress={() => setWaiterSection('status')} />
+      </View>
+
+      {saveError ? (
+        <Pressable style={styles.errBar} onPress={retrySave}>
+          <Icon name="alert-triangle" size={16} color="#fff" />
+          <Text style={styles.errText}>Could not save to this tablet: {saveError}. Tap to retry.</Text>
+        </Pressable>
+      ) : null}
+
+      <View style={{ flex: 1 }}>
+        {waiterSection === 'order' ? <OrderScreen waiterId={loggedInWaiterId} dineInOnly /> : <KitchenScreen waiterId={loggedInWaiterId} />}
+      </View>
+
+      <PrinterModal visible={printerOpen} onClose={() => setPrinterOpen(false)} />
+      <Confirm
+        visible={waiterLogoutOpen}
+        title="Log out?"
+        message="You'll need your username and password to log back in."
+        confirmLabel="Log out"
+        onCancel={() => setWaiterLogoutOpen(false)}
+        onConfirm={() => {
+          logoutWaiter();
+          setWaiterLogoutOpen(false);
+        }}
+      />
       <ToastHost />
     </SafeAreaView>
   );

@@ -21,7 +21,7 @@ export function UpdateWatcher(): null {
     if (announcedFresh.current) return;
     if (currentlyRunning.updateId && !currentlyRunning.isEmbeddedLaunch) {
       announcedFresh.current = true;
-      toast('ONEORDER updated to the latest version.', 'success', 4000);
+      toast('ONE-ORDER updated to the latest version.', 'success', 4000);
     }
   }, [currentlyRunning]);
 
@@ -59,7 +59,7 @@ export function UpdateAvailableBanner(): ReactElement | null {
       <View style={styles.banner}>
         <Icon name="download" size={18} color="#fff" />
         <Text style={styles.text} numberOfLines={2}>
-          ONEORDER {m.version} is available.
+          ONE-ORDER {m.version} is available.
         </Text>
         <Pressable
           accessibilityRole="button"

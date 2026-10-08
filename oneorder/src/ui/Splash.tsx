@@ -55,7 +55,8 @@ export function Splash({ name, onDone }: { name: string; onDone: () => void }) {
   const wordmarkLift = wordmarkAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] });
   const footerLift = footerAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] });
   const cafeName = name.trim();
-  const showCafe = cafeName && cafeName.toUpperCase() !== 'ONEORDER' && cafeName.toUpperCase() !== 'ONE ORDER';
+  const showCafe =
+    cafeName && !['ONEORDER', 'ONE ORDER', 'ONE-ORDER'].includes(cafeName.toUpperCase());
 
   return (
     <Pressable style={styles.root} onPress={finish} accessibilityLabel="Skip intro">

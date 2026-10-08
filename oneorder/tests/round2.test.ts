@@ -119,7 +119,7 @@ test('logo and QR appear as real image blocks on the bill, and the brand footer 
   assert.equal(images[1].width, 16);
   const brandLines = textOnly(blocks).filter((l) => l.brand);
   assert.equal(brandLines.length, 1);
-  assert.equal(brandLines[0].text, `${s.settings.main.bill.name} x ONEORDER`);
+  assert.equal(brandLines[0].text, `${s.settings.main.bill.name} x ONE-ORDER`);
   assert.ok(!/[^\x00-\x7F]/.test(brandLines[0].text), 'brand footer must be plain ASCII - printers only support a legacy charset');
 
   const noAssets = layoutCustomerBill(templateById('t2'), baseBillData(s));

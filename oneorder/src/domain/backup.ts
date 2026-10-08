@@ -179,7 +179,7 @@ export function parseBackup(text: string): { backup?: BackupFile; error?: string
   }
   const b = raw as Partial<BackupFile>;
   if (!b || b.app !== 'oneorder' || typeof b.version !== 'number' || !b.data) {
-    return { error: 'This is not a ONEORDER backup file.' };
+    return { error: 'This is not a ONE-ORDER backup file.' };
   }
   if (b.version > BACKUP_VERSION) return { error: 'This backup was made by a newer version of the app.' };
   const d = b.data;
@@ -315,7 +315,7 @@ export function importMenu(state: State, text: string): MenuImportResult {
     return { ...result, error: 'This file is not valid JSON.' };
   }
   if (!raw || raw.app !== 'oneorder-menu' || !Array.isArray(raw.items)) {
-    return { ...result, error: 'This is not a ONEORDER menu file.' };
+    return { ...result, error: 'This is not a ONE-ORDER menu file.' };
   }
   const categories = { ...state.categories };
   const items = { ...state.items };

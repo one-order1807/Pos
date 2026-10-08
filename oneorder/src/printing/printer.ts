@@ -46,7 +46,7 @@ const PRINTER_SERVICES = [
 const GENERIC_SERVICE_PREFIXES = ['00001800', '00001801', '0000180a', '0000180f'];
 
 const UNSUPPORTED_MESSAGE =
-  'Bluetooth printing needs the ONEORDER development build (Expo Go cannot access native Bluetooth). Status stays Disconnected until a real printer is connected.';
+  'Bluetooth printing needs the ONE-ORDER development build (Expo Go cannot access native Bluetooth). Status stays Disconnected until a real printer is connected.';
 
 let snapshot: PrinterSnapshot = {
   status: 'disconnected',

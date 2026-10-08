@@ -94,7 +94,7 @@ class BubbleService : Service() {
   private fun buildNotification(): Notification {
     val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-      val channel = NotificationChannel(CHANNEL_ID, "ONEORDER bubble", NotificationManager.IMPORTANCE_MIN)
+      val channel = NotificationChannel(CHANNEL_ID, "ONE-ORDER bubble", NotificationManager.IMPORTANCE_MIN)
       channel.setShowBadge(false)
       nm.createNotificationChannel(channel)
     }
@@ -105,7 +105,7 @@ class BubbleService : Service() {
       this, 0, tapIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
     return NotificationCompat.Builder(this, CHANNEL_ID)
-      .setContentTitle("ONEORDER is running")
+      .setContentTitle("ONE-ORDER is running")
       .setContentText("Tap the floating bubble to reopen it.")
       .setSmallIcon(android.R.drawable.ic_dialog_info)
       .setPriority(NotificationCompat.PRIORITY_MIN)

@@ -1,0 +1,7 @@
+# Real secrets - copy .env.example to .env locally/on the server, never commit the real one.
+.env
+.env.*.local
+
+__pycache__/
+*.pyc
+.venv/

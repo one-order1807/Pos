@@ -1,0 +1,113 @@
+# Infrastructure scaffold for ONE-ORDER's Phase 2 backend (replacing the app's current Firebase
+# sync - see oneorder/src/sync/). NOT wired to the app yet and NOT deployed anywhere yet - this is
+# the skeleton to build real endpoints/migrations/jobs on top of. See README.md for what each
+# service is for and what's still missing.
+#
+# Resource budget is sized for the current 2-core / 4GB server (see README.md's "Sizing" section
+# for the upgrade path as load grows): roughly 2.1 CPU / 2.2GB across all five containers, leaving
+# headroom for the OS and Docker itself.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 1024m
+    mem_reservation: 512m
+    cpus: 1.0
+    # Not published to the host by default - only containers on this compose network (api,
+    # worker, scheduler) need to reach it. Uncomment to connect a desktop GUI client directly:
+    # ports: ["5432:5432"]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # appendonly: survives a container restart without losing queued jobs. maxmemory+lru: Redis
+    # is used here as a cache AND the worker queue's broker, so it must never grow unbounded on a
+    # 4GB box - old cache entries are evicted first under pressure, queued jobs are tiny by
+    # comparison and unlikely to be what gets reclaimed.
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory', '200mb', '--maxmemory-policy', 'allkeys-lru']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 256m
+    cpus: 0.25
+
+  # The one container the mobile app (eventually) talks to directly. Stateless by design - all
+  # real state lives in postgres/redis - so it can be restarted or scaled out without data loss.
+  api:
+    build:
+      context: ./api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - '${API_PORT:-8000}:8000'
+    mem_limit: 512m
+    cpus: 0.5
+
+  # Consumes background jobs the api enqueues into Redis (rq) - anything slower than an HTTP
+  # request should belong, so the api process itself never blocks a waiter's phone waiting on it.
+  # Same image as api (see api/Dockerfile), just a different command - one less image to maintain.
+  worker:
+    build:
+      context: ./api
+    restart: unless-stopped
+    command: ['rq', 'worker', '--url', 'redis://redis:6379/0', 'default']
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 256m
+    cpus: 0.25
+
+  # Runs ONLY the low-traffic-hours jobs (reconciliation, reporting, archival - see README.md) -
+  # deliberately separate from `worker` so a slow nightly job can never starve real-time order/
+  # kitchen traffic, which must stay on `worker` instead. Currently a placeholder schedule with no
+  # real job logic yet (see api/scheduler.py).
+  scheduler:
+    build:
+      context: ./api
+    restart: unless-stopped
+    command: ['python', 'scheduler.py']
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.1
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -61,7 +61,7 @@ export function DevModeScreen() {
       <View style={styles.head}>
         <View>
           <Text style={styles.title}>Dev Mode</Text>
-          <Text style={styles.version}>ONEORDER v{appJson.expo.version}</Text>
+          <Text style={styles.version}>ONE-ORDER v{appJson.expo.version}</Text>
         </View>
         <Btn small label="Lock" icon="lock" variant="secondary" onPress={lock} />
       </View>
@@ -229,7 +229,7 @@ function BillSetup() {
         disabled={!dirty || busy}
         onPress={() => {
           setBill({
-            name: form.name.trim() || 'ONEORDER',
+            name: form.name.trim() || 'ONE-ORDER',
             address: form.address.trim(),
             phone: form.phone.trim(),
             footer: form.footer.trim(),

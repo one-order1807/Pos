@@ -1,12 +1,14 @@
 import * as Application from 'expo-application';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
-import appJson from '../../app.json';
 
-// Which client/branch this build belongs to, baked in at build time via app.json's
-// extra.updateChannel. Every branch/client eventually gets its own value here, and its own
-// channels/<name>.json file in the public manifest repo below - so an install only ever hears
-// about updates published for ITS OWN channel, never another client's.
-const CHANNEL = (appJson.expo.extra as { updateChannel?: string } | undefined)?.updateChannel ?? 'default';
+// Which client/variant this build belongs to, baked in at build time via app.config.js's
+// extra.updateChannel (resolved through expo-constants, NOT a static app.json import - the admin
+// and waiter builds resolve this to different values at prebuild time, see app.config.js). Every
+// branch/client eventually gets its own value here, and its own channels/<name>.json file in the
+// public manifest repo below - so an install only ever hears about updates published for ITS OWN
+// channel, never another client's or the other app variant's.
+const CHANNEL = (Constants.expoConfig?.extra as { updateChannel?: string } | undefined)?.updateChannel ?? 'default';
 
 // A small, separate PUBLIC repo whose only job is hosting one version-manifest JSON file per
 // channel. The main source repo can be private with no effect on this - raw.githubusercontent.com

@@ -15,7 +15,7 @@ export function defaultSettings(): Settings {
     combinedBillPrint: false,
     gst: { enabled: false, lines: [{ type: 'GST', percent: '5' }], number: '' },
     bill: {
-      name: 'ONEORDER Cafe',
+      name: 'ONE-ORDER Cafe',
       logoUri: '',
       logoRaster: null,
       address: '',

@@ -11,7 +11,7 @@ export interface PrintLine {
   bold?: boolean;
   size?: 1 | 2;
   tall?: boolean;
-  brand?: boolean; // the café-name + "ONEORDER" footer line - Receipt.tsx styles this with the wordmark font
+  brand?: boolean; // the café-name + "ONE-ORDER" footer line - Receipt.tsx styles this with the wordmark font
 }
 
 export interface PrintImage {
@@ -148,7 +148,7 @@ function headerBlocks(t: PrintTemplate, bill: BillSettings, gst?: GstSettings): 
   const w = t.columns;
   const logo = rasterAssetToPrintImage(bill.logoRaster);
   if (logo) out.push({ ...logo, align: 'center' });
-  const name = bill.name.trim() || 'ONEORDER';
+  const name = bill.name.trim() || 'ONE-ORDER';
   for (const l of wrapText(name.toUpperCase(), w)) out.push({ text: l, align: 'center', bold: true });
   if (bill.address.trim()) for (const l of wrapText(bill.address, w)) out.push({ text: l, align: 'center' });
   if (bill.phone.trim()) out.push({ text: `Ph: ${bill.phone.trim()}`, align: 'center' });
@@ -173,7 +173,7 @@ function footerBlocks(t: PrintTemplate, bill: BillSettings): PrintBlock[] {
   // Printers only support a legacy ASCII-ish character set (see toPrinterAscii in escpos.ts) - a
   // middle dot or multiplication sign here would print as "?" on real hardware, even though it
   // renders fine on screen. Plain "x" is the printed-safe equivalent.
-  const brandFooter = cafeName && cafeName.toUpperCase() !== 'ONEORDER' ? `${cafeName} x ONEORDER` : 'ONEORDER';
+  const brandFooter = cafeName && cafeName.toUpperCase() !== 'ONE-ORDER' ? `${cafeName} x ONE-ORDER` : 'ONE-ORDER';
   out.push({ text: brandFooter, align: 'center', bold: true, brand: true });
   return out;
 }

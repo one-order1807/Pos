@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "ONEORDER",
+    "name": "ONE-ORDER",
     "slug": "oneorder",
     "version": "1.5.0",
     "orientation": "default",
@@ -10,7 +10,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.oneorder.pos",
       "infoPlist": {
-        "NSBluetoothAlwaysUsageDescription": "ONEORDER connects to your Bluetooth thermal printer to print bills."
+        "NSBluetoothAlwaysUsageDescription": "ONE-ORDER connects to your Bluetooth thermal printer to print bills."
       }
     },
     "android": {
@@ -49,7 +49,7 @@
         {
           "isBackgroundEnabled": false,
           "modes": [],
-          "bluetoothAlwaysPermission": "ONEORDER connects to your Bluetooth thermal printer to print bills."
+          "bluetoothAlwaysPermission": "ONE-ORDER connects to your Bluetooth thermal printer to print bills."
         }
       ],
       "expo-updates",

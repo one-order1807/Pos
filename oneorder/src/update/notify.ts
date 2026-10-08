@@ -41,7 +41,7 @@ export async function notifyUpdateAvailable(manifest: UpdateManifest): Promise<v
   notifiedForVersionCode.add(manifest.versionCode);
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: 'ONEORDER update available',
+      title: 'ONE-ORDER update available',
       body: `Version ${manifest.version} is ready to install. Tap to open the app and update.`,
     },
     trigger: null,

@@ -65,8 +65,8 @@ export function LogoMark({ size = 64 }: { size?: number }) {
 export function LogoWordmark({ size = 24 }: { size?: number }) {
   return (
     <View style={{ flexDirection: 'row' }}>
-      <Text style={{ fontFamily: fonts.bold, fontSize: size, color: colors.text, letterSpacing: 0.5 }}>ONE</Text>
-      <Text style={{ fontFamily: fonts.bold, fontSize: size, color: colors.primary, letterSpacing: 0.5 }}> ORDER</Text>
+      <Text style={{ fontFamily: fonts.bold, fontSize: size, color: colors.text, letterSpacing: 0.5 }}>ONE-</Text>
+      <Text style={{ fontFamily: fonts.bold, fontSize: size, color: colors.primary, letterSpacing: 0.5 }}>ORDER</Text>
     </View>
   );
 }

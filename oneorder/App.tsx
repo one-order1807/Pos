@@ -3,6 +3,7 @@ import { WorkSans_400Regular } from '@expo-google-fonts/work-sans/400Regular';
 import { WorkSans_500Medium } from '@expo-google-fonts/work-sans/500Medium';
 import { WorkSans_600SemiBold } from '@expo-google-fonts/work-sans/600SemiBold';
 import { WorkSans_700Bold } from '@expo-google-fonts/work-sans/700Bold';
+import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
@@ -13,10 +14,16 @@ import { ensureTicketReadyChannels } from './src/notifications/ticketReady';
 import { Btn, Skeleton } from './src/ui/components';
 import { BubbleController } from './src/ui/BubbleController';
 import { ErrorBoundary } from './src/ui/ErrorBoundary';
-import { Shell } from './src/ui/Shell';
+import { Shell, WaiterShell } from './src/ui/Shell';
 import { Splash } from './src/ui/Splash';
 import { UpdateAvailableBanner, UpdateWatcher } from './src/ui/UpdateBanner';
+import { WaiterLoginScreen } from './src/ui/WaiterLogin';
 import { colors, fonts } from './src/ui/theme';
+
+// Baked in at build time via app.config.js's APP_VARIANT handling - 'waiter' only for the
+// dedicated waiter-app build (see .github/workflows/build-apk.yml). Everything else is one shared
+// codebase; this is the one place that decides which top-level UI a given install ever shows.
+const APP_VARIANT = (Constants.expoConfig?.extra as { appVariant?: string } | undefined)?.appVariant ?? 'admin';
 
 let splashShown = false;
 
@@ -43,6 +50,7 @@ export default function App() {
   const loadError = useStore((s) => s.loadError);
   const init = useStore((s) => s.init);
   const cafeName = useStore((s) => s.data.settings.main?.bill.name);
+  const loggedInWaiterId = useStore((s) => s.loggedInWaiterId);
   const [splash, setSplash] = useState(!splashShown);
 
   useEffect(() => {
@@ -57,7 +65,7 @@ export default function App() {
       <>
         <StatusBar style="dark" />
         <Splash
-          name={cafeName || 'ONEORDER'}
+          name={cafeName || 'ONE-ORDER'}
           onDone={() => {
             splashShown = true;
             setSplash(false);
@@ -90,7 +98,7 @@ export default function App() {
     <ErrorBoundary>
       <SafeAreaProvider>
         <StatusBar style="dark" />
-        <Shell />
+        {APP_VARIANT === 'waiter' ? (loggedInWaiterId ? <WaiterShell /> : <WaiterLoginScreen />) : <Shell />}
         <UpdateWatcher />
         <UpdateAvailableBanner />
         <BubbleController />

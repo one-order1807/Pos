@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// ONEORDER Firestore security rules.
+// ONE-ORDER Firestore security rules.
 //
 // Apply these via the Firebase console (Firestore Database > Rules tab > paste and Publish) or
 // `firebase deploy --only firestore:rules` if the Firebase CLI is set up - this file isn't

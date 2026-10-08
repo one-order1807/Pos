@@ -390,7 +390,7 @@ export function DelayedConfirm({
 }
 
 export function Wordmark({ size = 26, color = colors.primary }: { size?: number; color?: string }) {
-  return <Text style={{ fontFamily: fonts.wordmark, fontSize: size, color, letterSpacing: 0.6 }}>ONEORDER</Text>;
+  return <Text style={{ fontFamily: fonts.wordmark, fontSize: size, color, letterSpacing: 0.6 }}>ONE-ORDER</Text>;
 }
 
 export function Dot({ color, size = 10 }: { color: string; size?: number }) {
