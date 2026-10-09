@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import appJson from '../../app.json';
+import { activateDevice, type ActivateResult } from '../activation/activate';
 import { getDevicePref, loadState, setDevicePref, writeChanges } from '../db/sqlite';
 import { applyBackup, importMenu, mergeBackup, parseBackup, type BackupFile, type MenuImportResult } from '../domain/backup';
 import { allDocs, diffStates, type DocChange } from '../domain/diff';
@@ -29,6 +31,7 @@ const UNLOCK_MS = 10 * 60 * 1000;
 const tapGuard = makeTapGuard(150);
 const CHEF_MODE_PREF_KEY = 'chefMode';
 const WAITER_SESSION_PREF_KEY = 'waiterId';
+const ACTIVATION_PREF_KEY = 'deviceToken';
 
 interface StoreShape {
   ready: boolean;
@@ -43,6 +46,12 @@ interface StoreShape {
   /** Per-device, never synced - same reasoning as chefMode: which waiter is using THIS tablet
    * right now is a device fact, not a business fact that should propagate anywhere else. */
   loggedInWaiterId: string | null;
+  /** Whether this device has redeemed a one-time access key yet - see src/activation/activate.ts
+   * and src/ui/ActivationGate.tsx. Per-device, never synced, same reasoning as chefMode. */
+  activated: boolean;
+  /** appVariant ('admin' | 'waiter') is passed in from App.tsx, which already resolves it from
+   * expo-constants - kept out of this module so it stays importable from plain Node (see tests/). */
+  activate: (code: string, appVariant: string) => Promise<ActivateResult>;
   init: () => Promise<void>;
   retrySave: () => void;
   setTab: (t: TabKey) => void;
@@ -158,12 +167,15 @@ export const useStore = create<StoreShape>((set, get) => {
     unlockedUntil: 0,
     chefMode: false,
     loggedInWaiterId: null,
+    activated: false,
 
     async init() {
       try {
         const chefModePref = await getDevicePref(CHEF_MODE_PREF_KEY);
         if (chefModePref === '1') set({ chefMode: true });
         const waiterPref = await getDevicePref(WAITER_SESSION_PREF_KEY);
+        const activationPref = await getDevicePref(ACTIVATION_PREF_KEY);
+        if (activationPref) set({ activated: true });
         const { state, count } = await loadState();
         let data = state;
         if (count === 0 || !data.settings.main) {
@@ -251,6 +263,15 @@ export const useStore = create<StoreShape>((set, get) => {
     logoutWaiter() {
       set({ loggedInWaiterId: null, activeSessionId: null });
       setDevicePref(WAITER_SESSION_PREF_KEY, '').catch(() => {});
+    },
+
+    async activate(code, appVariant) {
+      const result = await activateDevice(code, appVariant, appJson.expo.version);
+      if (result.ok && result.deviceToken) {
+        await setDevicePref(ACTIVATION_PREF_KEY, result.deviceToken);
+        set({ activated: true });
+      }
+      return result;
     },
 
     newOrder(type, openedBy) {

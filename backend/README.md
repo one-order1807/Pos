@@ -1,17 +1,18 @@
-# ONE-ORDER backend - infrastructure scaffold (Phase 2, not started yet)
+# ONE-ORDER backend
 
-**Status: scaffolding only.** Nothing in this directory is wired to the ONE-ORDER app yet, and
-nothing here is deployed anywhere yet. The app (`oneorder/`) still runs entirely on local SQLite
-plus its existing optional Firebase/Firestore sync (`oneorder/src/sync/`) - this directory is the
-skeleton the *next* phase of work gets built on top of, when that's actually started: a real
-Python API, Postgres as the central database, and Redis for caching/background jobs, eventually
-**replacing** Firebase sync (per the confirmed direction - not running alongside it).
+**Status: multi-tenant activation/licensing is real and working; order/menu sync is still a
+scaffold.** The app (`oneorder/`) still runs its actual order/menu/table data entirely on local
+SQLite plus its existing optional Firebase/Firestore sync (`oneorder/src/sync/`) - that part of
+this backend is still the skeleton a *later* phase builds on, eventually **replacing** Firebase
+sync (not running alongside it).
 
-What exists here: a working `docker compose up` that boots five containers and proves they can
-all talk to each other (the `api` container's `/health` endpoint checks Postgres and Redis
-connectivity for real). What does **not** exist yet: any real database schema, any real API
-endpoint (waiter login, order sync, kitchen/ticket status...), any real background job, and any
-actual deployment to a server. Treat every Python file here as a starting point, not a design.
+What's real: a `docker compose up` that boots five containers and proves they can all talk to
+each other (`/health` checks Postgres and Redis connectivity for real); a multi-tenant schema
+(`organizations` / `devices` / `activation_keys` - see "Multi-tenancy" below) with an Alembic
+migration that creates it; and a working first-launch device activation flow (`POST /activate`,
+`gen_key.py`) that the mobile app actually calls. What does **not** exist yet: real order/menu
+sync endpoints (waiter login, order sync, kitchen/ticket status...), any real background job
+logic, and TLS/a reverse proxy in front of `api`.
 
 ## Containers, and why each one exists
 
@@ -54,11 +55,59 @@ containers whose image/config actually changed, and `alembic upgrade head` is a 
 at head. This is a manual script, not CI automation - nothing currently pushes this anywhere
 automatically (unlike `oneorder`'s Android build).
 
+## Multi-tenancy
+
+One shared Postgres instance serves every client ("org" - one hotel/restaurant). Isolation is by
+row, not by database or schema: every table that matters (`devices`, `activation_keys`, and every
+real business table added later) has an `org_id` column. What keeps one client's data from ever
+leaking into another's is that **each client gets its own deployment** of this `api`/`worker`/
+`scheduler` image (its own container, its own domain) - and that deployment's `ORG_ID`/`ORG_NAME`
+come from its own `.env` (see `.env.example`), never from anything a request sends. Every row a
+deployment writes is stamped with its own `ORG_ID` server-side; a compromised or misconfigured
+client app literally cannot address another org's rows, because the queries that would do that
+don't exist on that deployment. Onboarding a new client is: copy `.env.example`, pick a unique
+`ORG_ID`, stand up a new deployment pointed at the same Postgres - no schema or code change needed.
+
+The one deliberate crack in that wall is `/admin/orgs` and `/admin/orgs/{org_id}/devices`, which
+query across every org in the shared database - meant for your own visibility into all clients
+(version, device count, etc.), not for any client app. They 403 unconditionally unless `ADMIN_TOKEN`
+is set (see `.env.example`); **only set it on a deployment no client app ever points at.**
+
+## Device activation (first-launch access key)
+
+The app's first launch shows a branded splash, then (if this device hasn't activated yet) an
+"Access key" screen. The flow:
+
+1. On the server, generate a code for the client you're activating a device for:
+   ```sh
+   docker compose run --rm api python gen_key.py          # 10-minute default
+   docker compose run --rm api python gen_key.py 300       # custom TTL, in seconds
+   ```
+   This prints a 10-character code (letters/digits/symbols, no ambiguous characters) and its
+   expiry. Read/send it to whoever is installing the app.
+2. They type it into the app within the printed window. The app calls `POST /activate` with the
+   code plus a random device id it generates once and stores locally.
+3. The server checks the code against this deployment's `ORG_ID` only, rejects it if it's expired
+   or already used, marks it used, and returns a per-device token the app stores locally. The code
+   can never be redeemed a second time, by anyone, even if it was overheard or screenshotted.
+
+Codes are stored as a SHA-256 hash only (`app/security.py`) - a database dump alone can never hand
+out a currently-valid code. This only works if the device has network access to this deployment's
+domain the moment the key is entered (see the project's earlier decision on this) - there's no
+offline fallback.
+
 ## Database migrations (Alembic)
 
-The scaffold is wired up (`api/alembic.ini`, `api/migrations/`) but **no migrations exist yet**
-(`api/migrations/versions/` is empty) because no real schema has been designed yet. Once there are
-SQLAlchemy models to migrate:
+`api/migrations/versions/0001_initial_schema.py` creates `organizations`/`devices`/
+`activation_keys`. It was **hand-written, not autogenerated** - there was no live Postgres
+available to diff against models.py when it was authored, so run it and confirm it applies cleanly
+before trusting it in production:
+
+```sh
+docker compose run --rm api alembic upgrade head
+```
+
+For any later schema change, autogenerate against `app/models.py` as usual:
 
 ```sh
 docker compose run --rm api alembic revision --autogenerate -m "describe the change"
@@ -92,10 +141,15 @@ headroom on a 2-core/4GB box for the OS and Docker itself:
 
 ## What's deliberately NOT here
 
-- No real endpoints (auth, order sync, kitchen status, idempotent writes, sync checkpoints) - the
-  actual Phase 2 design and build is separate, later work.
-- No deployment automation (no CI job pushes this anywhere, unlike `oneorder`'s Android build).
-- No multi-tenant schema design yet - worth deciding deliberately once there's a real schema to
-  decide it for, not guessed at in a scaffold.
+- No order/menu sync endpoints yet (order sync, kitchen status, idempotent writes, sync
+  checkpoints) - the actual Phase 2 design and build for that is separate, later work. Device
+  activation/licensing is the one part of Phase 2 that's real so far.
+- No deployment automation (no CI job pushes this anywhere, unlike `oneorder`'s Android build) -
+  `deploy.sh` is a manual script you run yourself per deployment.
+- No seat-count enforcement yet - `organizations.max_devices` exists in the schema but nothing
+  reads it; add that check to `/activate` once you actually want to cap devices per client.
+- No super-admin UI - `/admin/orgs` and `/admin/orgs/{org_id}/devices` are API-only by design for
+  now (confirmed direction - a dashboard UI is a separate, later build on top of these).
 - No TLS/reverse proxy in front of `api` - add one (Caddy/nginx/Traefik) before this ever faces
-  the public internet.
+  the public internet. The access-key flow assumes the connection to `api` is already trusted;
+  over plain HTTP on the open internet, a code could be intercepted in transit.

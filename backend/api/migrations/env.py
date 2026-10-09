@@ -13,9 +13,10 @@ if config.config_file_name is not None:
 # actually wired to - never a connection string hardcoded into a committed file.
 config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
 
-# Set this to your SQLAlchemy Base.metadata once real models exist, so `alembic revision
-# --autogenerate` can diff against them. No models exist yet - this is scaffolding.
-target_metadata = None
+from app.db import Base  # noqa: E402
+import app.models  # noqa: E402,F401  (import registers every table on Base.metadata below)
+
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:

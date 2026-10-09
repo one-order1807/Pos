@@ -4,6 +4,25 @@ One short entry per release: what changed, what was fixed, and the version it sh
 the answer to "what changed, is this done, what's in this build" going forward — keep it updated
 every round rather than reconstructing it from chat history later.
 
+## v2.2.0 — 2026-10-09 (multi-tenant backend + first-launch device activation)
+
+- Added: the backend (`backend/`) now has a real multi-tenant schema - `organizations`, `devices`,
+  `activation_keys` - and a working `POST /activate` endpoint. One shared Postgres instance serves
+  every client; each client gets its own deployment (own `ORG_ID`/`ORG_NAME` in its `.env`), and
+  every row a deployment writes is tagged with its own org - never one a request supplies. See
+  `backend/README.md`'s "Multi-tenancy" section.
+- Added: `backend/api/gen_key.py`, a server-side CLI (`docker compose run --rm api python
+  gen_key.py`) that generates a one-time, time-limited (10 min default) access key for a client
+  deployment. Codes are stored as a SHA-256 hash only, never in plaintext.
+- Added: the app now gates first launch behind that access key - a branded screen (reusing the
+  existing logo) asking for the key, shown once per device until it's redeemed, the same way on
+  both the admin and waiter builds (`src/ui/ActivationGate.tsx`, `src/activation/activate.ts`,
+  `store.ts`'s `activated`/`activate`). Requires network access to the configured backend
+  (`EXPO_PUBLIC_BACKEND_URL`) at activation time - there's no offline fallback.
+- Added: `GET /admin/orgs` and `GET /admin/orgs/{org_id}/devices` - cross-client visibility (which
+  clients exist, device counts, app versions) for internal use only. 403s unless `ADMIN_TOKEN` is
+  explicitly set on a deployment - never set it on a deployment a client app can reach.
+
 ## v2.1.0 — 2026-10-09 (ONE-ORDER rebrand, admin/waiter split, backend scaffold)
 
 - Changed: rebranded to ONE-ORDER; this branch now builds and ships **two separate Android apps**

@@ -11,6 +11,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useStore } from './src/store/store';
 import { ensureTicketReadyChannels } from './src/notifications/ticketReady';
+import { ActivationGateScreen } from './src/ui/ActivationGate';
 import { Btn, Skeleton } from './src/ui/components';
 import { BubbleController } from './src/ui/BubbleController';
 import { ErrorBoundary } from './src/ui/ErrorBoundary';
@@ -51,6 +52,7 @@ export default function App() {
   const init = useStore((s) => s.init);
   const cafeName = useStore((s) => s.data.settings.main?.bill.name);
   const loggedInWaiterId = useStore((s) => s.loggedInWaiterId);
+  const activated = useStore((s) => s.activated);
   const [splash, setSplash] = useState(!splashShown);
 
   useEffect(() => {
@@ -92,6 +94,12 @@ export default function App() {
         <Skeleton width={160} height={20} style={{ marginTop: 10 }} />
       </View>
     );
+  }
+
+  // One-time gate, same for every build/variant - see src/ui/ActivationGate.tsx and store.ts's
+  // `activated`/`activate`. Shown once per device, before anything else in the app.
+  if (!activated) {
+    return <ActivationGateScreen appVariant={APP_VARIANT} />;
   }
 
   return (
