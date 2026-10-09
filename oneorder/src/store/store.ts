@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import appJson from '../../app.json';
+import { activateDevice, type ActivateResult } from '../activation/activate';
 import { getDevicePref, loadState, setDevicePref, writeChanges } from '../db/sqlite';
 import { applyBackup, importMenu, mergeBackup, parseBackup, type BackupFile, type MenuImportResult } from '../domain/backup';
 import { allDocs, diffStates, type DocChange } from '../domain/diff';
@@ -26,6 +28,7 @@ export type TabKey = 'order' | 'tables' | 'kitchen' | 'menu' | 'users' | 'dashbo
 const UNLOCK_MS = 10 * 60 * 1000;
 const tapGuard = makeTapGuard(150);
 const CHEF_MODE_PREF_KEY = 'chefMode';
+const ACTIVATION_PREF_KEY = 'deviceToken';
 
 interface StoreShape {
   ready: boolean;
@@ -37,6 +40,10 @@ interface StoreShape {
   unlockedUntil: number;
   /** Per-device, never synced - see db/sqlite.ts's device_prefs table. */
   chefMode: boolean;
+  /** Whether this device has redeemed a one-time access key yet - see src/activation/activate.ts
+   * and src/ui/ActivationGate.tsx. Per-device, never synced, same reasoning as chefMode. */
+  activated: boolean;
+  activate: (code: string, appVariant: string) => Promise<ActivateResult>;
   init: () => Promise<void>;
   retrySave: () => void;
   setTab: (t: TabKey) => void;
@@ -145,11 +152,14 @@ export const useStore = create<StoreShape>((set, get) => {
     activeSessionId: null,
     unlockedUntil: 0,
     chefMode: false,
+    activated: false,
 
     async init() {
       try {
         const chefModePref = await getDevicePref(CHEF_MODE_PREF_KEY);
         if (chefModePref === '1') set({ chefMode: true });
+        const activationPref = await getDevicePref(ACTIVATION_PREF_KEY);
+        if (activationPref) set({ activated: true });
         const { state, count } = await loadState();
         let data = state;
         if (count === 0 || !data.settings.main) {
@@ -211,6 +221,15 @@ export const useStore = create<StoreShape>((set, get) => {
       set({ chefMode: false });
       setDevicePref(CHEF_MODE_PREF_KEY, '0').catch(() => {});
       return true;
+    },
+
+    async activate(code, appVariant) {
+      const result = await activateDevice(code, appVariant, appJson.expo.version);
+      if (result.ok && result.deviceToken) {
+        await setDevicePref(ACTIVATION_PREF_KEY, result.deviceToken);
+        set({ activated: true });
+      }
+      return result;
     },
 
     newOrder(type) {

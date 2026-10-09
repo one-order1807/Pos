@@ -4,6 +4,15 @@ One short entry per release: what changed, what was fixed, and the version it sh
 the answer to "what changed, is this done, what's in this build" going forward — keep it updated
 every round rather than reconstructing it from chat history later.
 
+## v1.6.0 — 2026-10-09 (first-launch device activation)
+
+- Added: the app now gates first launch behind a one-time access key - a branded screen (reusing
+  the existing logo) asking for the key, shown once per device until it's redeemed
+  (`src/ui/ActivationGate.tsx`, `src/activation/activate.ts`, `store.ts`'s `activated`/`activate`).
+  Requires network access to a configured backend (`EXPO_PUBLIC_BACKEND_URL`) at activation time -
+  there's no offline fallback. See the Phase-2-backend branch's `backend/README.md` for how the key
+  is generated (`gen_key.py`) and verified (`POST /activate`).
+
 ## v1.5.0 — 2026-10-09
 
 - Version bump only, no functional changes since v1.4.0 - published as a release checkpoint for

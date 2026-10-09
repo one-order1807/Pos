@@ -9,6 +9,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useStore } from './src/store/store';
+import { ActivationGateScreen } from './src/ui/ActivationGate';
 import { Btn, Skeleton } from './src/ui/components';
 import { BubbleController } from './src/ui/BubbleController';
 import { ErrorBoundary } from './src/ui/ErrorBoundary';
@@ -42,6 +43,7 @@ export default function App() {
   const loadError = useStore((s) => s.loadError);
   const init = useStore((s) => s.init);
   const cafeName = useStore((s) => s.data.settings.main?.bill.name);
+  const activated = useStore((s) => s.activated);
   const [splash, setSplash] = useState(!splashShown);
 
   useEffect(() => {
@@ -82,6 +84,12 @@ export default function App() {
         <Skeleton width={160} height={20} style={{ marginTop: 10 }} />
       </View>
     );
+  }
+
+  // One-time gate - see src/ui/ActivationGate.tsx and store.ts's `activated`/`activate`. This
+  // branch has only one app variant, so "admin" is the only value appVariant is ever passed as.
+  if (!activated) {
+    return <ActivationGateScreen appVariant="admin" />;
   }
 
   return (
