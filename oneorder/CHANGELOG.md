@@ -4,6 +4,12 @@ One short entry per release: what changed, what was fixed, and the version it sh
 the answer to "what changed, is this done, what's in this build" going forward — keep it updated
 every round rather than reconstructing it from chat history later.
 
+## v1.5.0 — 2026-10-09
+
+- Version bump only, no functional changes since v1.4.0 - published as a release checkpoint for
+  this single-app track, kept separate from the admin/waiter split being developed on another
+  branch.
+
 ## v1.4.0 — 2026-10-08 (Round 7)
 
 - Added: Printer panel now shows a "Remembered printers" section for known printers that are off
