@@ -4,6 +4,18 @@ One short entry per release: what changed, what was fixed, and the version it sh
 the answer to "what changed, is this done, what's in this build" going forward — keep it updated
 every round rather than reconstructing it from chat history later.
 
+## v2.1.0 — 2026-10-09 (ONE-ORDER rebrand, admin/waiter split, backend scaffold)
+
+- Changed: rebranded to ONE-ORDER; this branch now builds and ships **two separate Android apps**
+  from the same codebase - the admin/counter app (`com.oneorder.pos`) and a waiter-only app
+  (`com.oneorder.pos.waiter`), selected at build time via `APP_VARIANT` (see `app.config.js`) and
+  built as a matrixed CI job (see `.github/workflows/build-apk.yml`) so both install side by side
+  on the same device without colliding. Each variant checks for updates against its own channel.
+- Added: infrastructure scaffold for the Phase 2 backend (`backend/`) - Postgres, Redis, a FastAPI
+  `api` container, `worker`/`scheduler` background-job containers, and Alembic migrations wired up
+  (no real schema or endpoints yet beyond a `/health` check - see `backend/README.md`). Not wired
+  to the app yet; the app still runs on local SQLite plus the existing optional Firebase sync.
+
 ## v1.5.0 — 2026-10-08 (Waiter Mode, Phase 1)
 
 - Added: Waiter Mode. Dev Mode gets a Waiter Mode toggle and waiter account management (username,

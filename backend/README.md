@@ -37,6 +37,23 @@ curl http://localhost:8000/health
 # {"status":"ok","postgres":true,"redis":true}
 ```
 
+## Deploying to a server
+
+```sh
+scp -r backend/ user@server:/opt/oneorder-backend   # or git clone/pull on the server instead
+ssh user@server
+cd /opt/oneorder-backend
+./deploy.sh
+```
+
+`deploy.sh` builds the `api` image, brings up the full compose stack, applies any pending Alembic
+migrations, and curls `/health` to confirm it came up. It creates `.env` from `.env.example` on
+first run if one doesn't exist yet - edit it (`POSTGRES_PASSWORD` at minimum) before trusting that
+first deploy. Re-running it later (e.g. after `git pull`) is safe: compose only recreates
+containers whose image/config actually changed, and `alembic upgrade head` is a no-op once already
+at head. This is a manual script, not CI automation - nothing currently pushes this anywhere
+automatically (unlike `oneorder`'s Android build).
+
 ## Database migrations (Alembic)
 
 The scaffold is wired up (`api/alembic.ini`, `api/migrations/`) but **no migrations exist yet**
