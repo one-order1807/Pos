@@ -1,6 +1,15 @@
 import { getDevicePref, setDevicePref } from '../db/sqlite';
 
 const DEVICE_ID_PREF_KEY = 'deviceId';
+// Where a successful activate() below stores the resulting device_token (see store.ts's
+// activate() action, the only writer) - exported so any other module that needs to authenticate
+// to the backend (e.g. backend/qrApi.ts) reads it from this one place instead of each keeping its
+// own copy of the pref key string.
+export const ACTIVATION_PREF_KEY = 'deviceToken';
+
+export async function getStoredDeviceToken(): Promise<string | null> {
+  return getDevicePref(ACTIVATION_PREF_KEY);
+}
 
 // Baked in at build time per client deployment (see backend/.env.example's ORG_ID/ORG_NAME side -
 // this is the matching client-side half: which backend domain THIS build's activation key gets

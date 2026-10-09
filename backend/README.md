@@ -1,18 +1,26 @@
 # ONE-ORDER backend
 
-**Status: multi-tenant activation/licensing is real and working; order/menu sync is still a
-scaffold.** The app (`oneorder/`) still runs its actual order/menu/table data entirely on local
-SQLite plus its existing optional Firebase/Firestore sync (`oneorder/src/sync/`) - that part of
-this backend is still the skeleton a *later* phase builds on, eventually **replacing** Firebase
-sync (not running alongside it).
+**Status: multi-tenant activation/licensing and QR table ordering are real and working; the
+broader order/menu sync for the admin app itself is still a scaffold.** The app (`oneorder/`)
+still runs its own menu/table editing, settings, and waiter accounts entirely on local SQLite plus
+its existing optional Firebase/Firestore sync (`oneorder/src/sync/`) - that part is untouched and
+is the skeleton a *later* phase builds on, eventually **replacing** Firebase sync (not running
+alongside it).
 
-What's real: a `docker compose up` that boots five containers and proves they can all talk to
-each other (`/health` checks Postgres and Redis connectivity for real); a multi-tenant schema
+What's real: a `docker compose up --build` that boots six containers and proves they can all talk
+to each other (`/health` checks Postgres and Redis connectivity for real); a multi-tenant schema
 (`organizations` / `devices` / `activation_keys` - see "Multi-tenancy" below) with an Alembic
-migration that creates it; and a working first-launch device activation flow (`POST /activate`,
-`gen_key.py`) that the mobile app actually calls. What does **not** exist yet: real order/menu
-sync endpoints (waiter login, order sync, kitchen/ticket status...), any real background job
-logic, and TLS/a reverse proxy in front of `api`.
+migration that creates it; a working first-launch device activation flow (`POST /activate`,
+`gen_key.py`) that the mobile app actually calls; and QR table ordering end to end - table/menu
+sync from Dev Mode, QR token mint/revoke/regenerate, public order intake with server-side price
+validation and idempotency, a job that mirrors a confirmed order into the exact Firestore
+documents the app already listens to (so it shows up in Chef/Admin with zero app-side sync
+changes - see `app/firestore_mirror.py`), a reconciliation sweep for outages, and Caddy serving
+`../customer-web`'s build plus reverse-proxying `/api/*` to this api container on one origin (see
+`Caddyfile`). What does **not** exist yet: the broader Phase 2 endpoints for the admin app itself
+(waiter login/sync, kitchen/ticket status), live "Preparing/Ready" push to the customer page (it
+polls `GET /orders/{id}`, which only distinguishes "received" from "with the kitchen" - a
+deliberate v1 cut), and any real deployment to a server.
 
 ## Containers, and why each one exists
 
@@ -22,7 +30,8 @@ logic, and TLS/a reverse proxy in front of `api`.
 | `redis`     | `redis:7-alpine`     | Two jobs in one process: a cache (so the `api` container isn't hitting Postgres for data that barely changes) and the broker the `worker` container consumes jobs from. |
 | `api`       | `./api` (FastAPI)    | The one container the mobile app would eventually talk to directly. Stateless - all real state lives in Postgres/Redis - so it can be restarted or scaled out without losing anything. |
 | `worker`    | `./api` (same image, different command - `rq worker`) | Runs background jobs the `api` container enqueues instead of handling them inline, so a slow task (e.g. sending a push notification, building a report) never makes a waiter's phone wait on an HTTP response. This is the **real-time-safe** background path - order sync, kitchen notifications, and other operational updates belong here, not in `scheduler`. |
-| `scheduler` | `./api` (same image, different command - `scheduler.py`) | Runs ONLY the low-traffic-hours jobs (reconciliation, reporting, archival - see the original spec's "10 PM-12 AM" window), kept in a separate container specifically so a slow nightly job can never contend with or delay real-time traffic on `worker`. Currently just a placeholder schedule with a no-op job (`api/scheduler.py`) - no real reconciliation logic exists yet. |
+| `scheduler` | `./api` (same image, different command - `scheduler.py`) | Runs the low-traffic-hours jobs (reconciliation, reporting, archival - see the original spec's "10 PM-12 AM" window) plus one much more frequent exception: `reconcile_stuck_orders` every 5 minutes, which re-enqueues any QR order stuck in `received`/`mirror_failed` after a real outage - a waiting customer can't wait for the 10 PM window. Kept in a separate container so a slow nightly job can never contend with or delay real-time traffic on `worker`. |
+| `caddy`     | `../` (multi-stage - see `Dockerfile.caddy`) | Reverse proxy + static host + automatic HTTPS, fronting both `api` and `../customer-web`'s build on one origin (`/api/*` vs everything else - see `Caddyfile`). The only container with ports published to the public internet (80/443); everything else stays on the internal compose network. |
 
 `worker` and `scheduler` intentionally share `api`'s Docker image (same `Dockerfile`, different
 `command:` in `docker-compose.yml`) rather than each getting their own near-identical Dockerfile -
@@ -37,6 +46,13 @@ docker compose up --build
 curl http://localhost:8000/health
 # {"status":"ok","postgres":true,"redis":true}
 ```
+
+`--build` also builds `customer-web` (Node, inside `Dockerfile.caddy`'s first stage) - no separate
+build step. With `PUBLIC_BASE_URL` unset (the local-dev default), Caddy serves everything over
+plain `http://localhost` with its own locally-trusted dev cert, no real ACME attempt. Open
+`http://localhost/t/<token>` once you have a real token (mint one via the app's Dev Mode -> QR
+Code Management, pointed at this local backend, or read one straight out of the `qr_tables`
+table).
 
 ## Deploying to a server
 
@@ -114,12 +130,15 @@ docker compose run --rm api alembic revision --autogenerate -m "describe the cha
 docker compose run --rm api alembic upgrade head
 ```
 
+`6ae0e2e8214b_qr_tables_menu_mirror_orders.py` (the QR/menu/order tables) followed exactly this
+path - autogenerated and applied against a real database as part of building it, not hand-written.
+
 `migrations/env.py` reads `DATABASE_URL` from the same environment variable the `api`/`worker`/
 `scheduler` containers already use - never a hardcoded connection string in a committed file.
 
 ## Sizing (2-core / 4GB server, with an upgrade path)
 
-Current per-container limits in `docker-compose.yml` total roughly **2.1 CPU / 2.2GB**, leaving
+Current per-container limits in `docker-compose.yml` total roughly **2.35 CPU / 2.3GB**, leaving
 headroom on a 2-core/4GB box for the OS and Docker itself:
 
 - `postgres`: 1.0 CPU, 1024MB limit (512MB reservation) - the one service worth protecting first
@@ -129,6 +148,8 @@ headroom on a 2-core/4GB box for the OS and Docker itself:
 - `api`: 0.5 CPU, 512MB.
 - `worker`: 0.25 CPU, 256MB.
 - `scheduler`: 0.1 CPU, 128MB - it does almost nothing most of the day.
+- `caddy`: 0.25 CPU, 128MB - a reverse proxy plus serving an already-built static site is cheap;
+  it never runs Node at request time, only during the image build.
 
 **Upgrade path, roughly in order of when you'd actually need it:**
 1. Raise `postgres`'s limit first (and give the server more RAM) - it's almost always the first
@@ -141,15 +162,23 @@ headroom on a 2-core/4GB box for the OS and Docker itself:
 
 ## What's deliberately NOT here
 
-- No order/menu sync endpoints yet (order sync, kitchen status, idempotent writes, sync
-  checkpoints) - the actual Phase 2 design and build for that is separate, later work. Device
-  activation/licensing is the one part of Phase 2 that's real so far.
+- No order/menu sync endpoints for the *admin app's own* data (waiter login/sync, kitchen/ticket
+  status) - that's the actual Phase 2 design and build, separate from QR ordering, still later
+  work. Device activation/licensing and QR table ordering are the two parts of this backend that
+  are real so far.
+- No live "Preparing/Ready" push to the customer-web page - it polls `GET /orders/{id}`, which
+  only ever reports "received" or "with the kitchen" (mirrored). The full version would need a
+  Firestore-change listener bridged over a WebSocket to the browser; cut from v1 as the most
+  complex, least load-bearing piece - add it as a fast-follow if customers need finer-grained
+  status than that.
+- No restaurant logo/branding image on the customer-web landing page - it shows the restaurant's
+  name only (`org_name`); threading the app's own bill logo through would need a new migration
+  and an RN-side raster-to-base64 step, cut from v1 as cosmetic rather than functional.
 - No deployment automation (no CI job pushes this anywhere, unlike `oneorder`'s Android build) -
   `deploy.sh` is a manual script you run yourself per deployment.
 - No seat-count enforcement yet - `organizations.max_devices` exists in the schema but nothing
   reads it; add that check to `/activate` once you actually want to cap devices per client.
 - No super-admin UI - `/admin/orgs` and `/admin/orgs/{org_id}/devices` are API-only by design for
   now (confirmed direction - a dashboard UI is a separate, later build on top of these).
-- No TLS/reverse proxy in front of `api` - add one (Caddy/nginx/Traefik) before this ever faces
-  the public internet. The access-key flow assumes the connection to `api` is already trusted;
-  over plain HTTP on the open internet, a code could be intercepted in transit.
+- No per-table-QR rate limiting on `POST /orders` - fine for a single café's traffic, worth adding
+  (e.g. at the Caddy layer) before this is exposed to a much larger audience.

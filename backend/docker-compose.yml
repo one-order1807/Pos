@@ -1,10 +1,11 @@
-# Infrastructure scaffold for ONE-ORDER's Phase 2 backend (replacing the app's current Firebase
-# sync - see oneorder/src/sync/). NOT wired to the app yet and NOT deployed anywhere yet - this is
-# the skeleton to build real endpoints/migrations/jobs on top of. See README.md for what each
-# service is for and what's still missing.
+# ONE-ORDER backend: QR table ordering (customer-web + the endpoints in app/main.py) is wired up
+# and tested; the broader Phase 2 (replacing the app's Firebase sync entirely - see
+# oneorder/src/sync/) is still not started beyond that. See README.md for what each service does
+# and what's still missing. NOT deployed anywhere yet - this is still a local/to-be-deployed
+# config, not a running server.
 #
 # Resource budget is sized for the current 2-core / 4GB server (see README.md's "Sizing" section
-# for the upgrade path as load grows): roughly 2.1 CPU / 2.2GB across all five containers, leaving
+# for the upgrade path as load grows): roughly 2.35 CPU / 2.3GB across all six containers, leaving
 # headroom for the OS and Docker itself.
 
 services:
@@ -108,6 +109,29 @@ services:
     mem_limit: 128m
     cpus: 0.1
 
+  # Reverse proxy + static host, fronting both `api` and the customer-web build on one origin
+  # (see Caddyfile) - the gap the README used to flag as "no TLS/reverse proxy yet". Build
+  # context is the repo root (not ./backend) so Dockerfile.caddy's build stage can reach
+  # ../customer-web.
+  caddy:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile.caddy
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    mem_limit: 128m
+    cpus: 0.25
+
 volumes:
   postgres_data:
   redis_data:
+  caddy_data:
+  caddy_config:

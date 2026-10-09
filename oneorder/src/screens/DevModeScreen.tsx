@@ -18,6 +18,7 @@ import { Btn, Card, Confirm, Field, Icon, Modal, SectionTitle, toast } from '../
 import { PinGate } from '../ui/PinGate';
 import { colors, fonts } from '../ui/theme';
 import { PrinterPanel, TemplatePicker } from './PrinterPanel';
+import { QrManagementSection } from './QrManagementScreen';
 
 export function DevModeScreen() {
   const unlockedUntil = useStore((s) => s.unlockedUntil);
@@ -71,6 +72,7 @@ export function DevModeScreen() {
       <TableModeSetup />
       <CombinedBillSetup />
       <WaiterModeSetup />
+      <QrManagementSection />
       <NotificationSetup />
       <BubbleStatus />
       <Card style={styles.section}>

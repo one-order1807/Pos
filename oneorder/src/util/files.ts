@@ -6,20 +6,24 @@ export async function shareJson(filename: string, payload: unknown): Promise<voi
   const file = new File(Paths.cache, filename);
   file.create({ overwrite: true });
   file.write(JSON.stringify(payload, null, 2));
-  if (!(await Sharing.isAvailableAsync())) {
-    throw new Error('Sharing is not available on this device.');
-  }
-  await Sharing.shareAsync(file.uri, { mimeType: 'application/json', dialogTitle: filename });
+  await shareFileAt(file.uri, 'application/json', filename);
 }
 
 export async function shareBinary(filename: string, bytes: Uint8Array, mimeType: string): Promise<void> {
   const file = new File(Paths.cache, filename);
   file.create({ overwrite: true });
   file.write(bytes);
+  await shareFileAt(file.uri, mimeType, filename);
+}
+
+/** Shares a file that already exists on disk (e.g. expo-print's printToFileAsync output) -
+ * shareJson/shareBinary both write their own file first and share it the same way; this is that
+ * shared tail for a caller whose file is already written. */
+export async function shareFileAt(uri: string, mimeType: string, dialogTitle: string): Promise<void> {
   if (!(await Sharing.isAvailableAsync())) {
     throw new Error('Sharing is not available on this device.');
   }
-  await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: filename });
+  await Sharing.shareAsync(uri, { mimeType, dialogTitle });
 }
 
 export async function pickTextFile(): Promise<{ name: string; text: string } | null> {

@@ -1,0 +1,23 @@
+# Fronts both this deployment's api container and the customer-web static build on one origin,
+# so the browser never needs CORS and no domain is ever hardcoded into the customer-web build
+# (see customer-web/src/api.ts) - just /api/* vs everything else.
+#
+# PUBLIC_BASE_URL is the SAME value main.py already uses to build QR links (see .env.example) -
+# one deployment, one domain, read from one place. Defaults to localhost (Caddy's own locally
+# trusted dev cert, no real ACME attempt) when unset, so `docker compose up` works on a laptop
+# with no public DNS at all.
+{$PUBLIC_BASE_URL:localhost} {
+	handle_path /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /site
+		# SPA fallback: any path that isn't a real built file (e.g. /t/<token>, a client-side
+		# route) serves index.html instead of a raw Caddy 404, letting react-router handle it.
+		try_files {path} /index.html
+		file_server
+	}
+
+	encode gzip
+}

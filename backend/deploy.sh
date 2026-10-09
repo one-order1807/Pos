@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Run this directly on the server to stand up the ONE-ORDER backend: builds the api image and
-# starts the full docker-compose stack (postgres, redis, api, worker, scheduler), then applies any
-# pending Alembic migrations. Safe to re-run - compose only recreates containers whose config/image
+# Run this directly on the server to stand up the ONE-ORDER backend: builds the api image (and
+# Caddy's image, which builds customer-web as part of the same step) and starts the full
+# docker-compose stack (postgres, redis, api, worker, scheduler, caddy), then applies any pending
+# Alembic migrations. Safe to re-run - compose only recreates containers whose config/image
 # actually changed, and `alembic upgrade head` is a no-op once already at head.
 #
 # Usage: ./deploy.sh

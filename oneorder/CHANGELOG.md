@@ -4,6 +4,37 @@ One short entry per release: what changed, what was fixed, and the version it sh
 the answer to "what changed, is this done, what's in this build" going forward — keep it updated
 every round rather than reconstructing it from chat history later.
 
+## v3.1.0 — 2026-10-09 (QR table ordering)
+
+- Added: Dev Mode → **QR Code Management** (`src/screens/QrManagementScreen.tsx`) - generates a
+  unique ordering QR code and link per table, fetched dynamically from the Tables section (no
+  manual entry). Copy one link or all of them at once, regenerate a table's QR (invalidating the
+  old one immediately), and export a print-ready PDF with every table's QR labelled by table
+  number (`expo-print` + `expo-clipboard`, new dependencies). Deleting a table now also revokes
+  its QR automatically - hooked into the existing `saveTables` save point in `store.ts`, not a
+  separate step to remember.
+- Added (`backend/`): real table/menu sync, QR token mint/revoke/regenerate, and public customer
+  order intake (`GET /t/{token}`, `POST /orders`, `GET /orders/{id}`) - server-side price
+  validation (never trusts the customer's cart), idempotency-key deduplication, and a background
+  job that mirrors a confirmed order into the *same* Firestore documents the app already listens
+  to, so it appears in Kitchen/Dashboard with no app-side sync changes. A reconciliation sweep
+  (every 5 minutes, `scheduler.py`) catches anything that didn't make it across after an outage.
+- Added: `customer-web/` - a new static site a customer lands on after scanning a table's QR.
+  Browse the menu (search + category filter), build a cart (persists across a refresh via
+  `localStorage`, scoped per table), place an order, see live-ish confirmation status. White,
+  blue-primary theme matching the admin app's own design system (Instrument Serif / Work Sans),
+  animated with Framer Motion, mobile-first. No login, no payment collection - billing stays
+  entirely in the existing POS workflow once the order lands.
+- Added: `backend/Caddyfile` + a `caddy` container - reverse-proxies `/api/*` to `api` and serves
+  `customer-web`'s build on the same origin (no CORS, no hardcoded domain in the frontend build),
+  with automatic HTTPS for whatever `PUBLIC_BASE_URL` a deployment sets.
+- Deliberately not in this release (flagged, not silently dropped): live "Preparing/Ready" ticket
+  status pushed to the customer page (it polls order status, which only distinguishes "received"
+  from "with the kitchen" - the full version needs a Firestore-listener-to-WebSocket bridge, the
+  single most complex piece here); the restaurant's logo on the customer landing page (shows the
+  name only - threading the app's own bill logo through needs a new migration); and actually
+  deploying any of this to a real server/domain.
+
 ## v2.2.0 — 2026-10-09 (multi-tenant backend + first-launch device activation)
 
 - Added: the backend (`backend/`) now has a real multi-tenant schema - `organizations`, `devices`,

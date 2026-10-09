@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import appJson from '../../app.json';
-import { activateDevice, type ActivateResult } from '../activation/activate';
+import { ACTIVATION_PREF_KEY, activateDevice, type ActivateResult } from '../activation/activate';
+import { syncTablesToBackend } from '../backend/qrApi';
 import { getDevicePref, loadState, setDevicePref, writeChanges } from '../db/sqlite';
 import { applyBackup, importMenu, mergeBackup, parseBackup, type BackupFile, type MenuImportResult } from '../domain/backup';
 import { allDocs, diffStates, type DocChange } from '../domain/diff';
@@ -31,7 +32,6 @@ const UNLOCK_MS = 10 * 60 * 1000;
 const tapGuard = makeTapGuard(150);
 const CHEF_MODE_PREF_KEY = 'chefMode';
 const WAITER_SESSION_PREF_KEY = 'waiterId';
-const ACTIVATION_PREF_KEY = 'deviceToken';
 
 interface StoreShape {
   ready: boolean;
@@ -383,6 +383,12 @@ export const useStore = create<StoreShape>((set, get) => {
       const err = ops.validateTables(get().data, draft);
       if (err) return err;
       commit((d) => ops.applyTables(d, draft));
+      // Fire-and-forget: keeps table QR codes in sync with the saved layout (new tables get a
+      // token, removed ones get revoked) without the admin needing to separately open QR
+      // Management every time. Safe to ignore here if it fails (no backend configured, offline,
+      // etc.) - QR Management re-syncs on its own whenever it's opened, and the table save itself
+      // must never be blocked or rolled back by a QR backend being unreachable.
+      syncTablesToBackend(Object.values(draft)).catch(() => {});
       return null;
     },
 

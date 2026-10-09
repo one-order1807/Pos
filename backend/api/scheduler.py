@@ -15,6 +15,8 @@ import time
 
 import schedule
 
+from app.firestore_mirror import reconcile_stuck_orders
+
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("scheduler")
 
@@ -27,9 +29,13 @@ def nightly_reconciliation():
 
 
 schedule.every().day.at("22:00").do(nightly_reconciliation)
+# Deliberately a separate, much more frequent job from the nightly placeholder above - a
+# QR-ordered customer is waiting right now, so a stuck order needs to reach the kitchen within
+# minutes of a real outage, not by the next 22:00 run. See reconcile_stuck_orders's own docstring.
+schedule.every(5).minutes.do(reconcile_stuck_orders)
 
 if __name__ == "__main__":
-    log.info("scheduler started - nightly_reconciliation placeholder scheduled for 22:00 server time")
+    log.info("scheduler started - nightly_reconciliation at 22:00, reconcile_stuck_orders every 5 minutes")
     while True:
         schedule.run_pending()
         time.sleep(30)
